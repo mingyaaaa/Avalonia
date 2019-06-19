@@ -41,6 +41,10 @@ namespace Avalonia.Direct2D1
             return new Rect(new Point(r.Left, r.Top), new Point(r.Right, r.Bottom));
         }
 
+        public static PixelSize ToAvalonia(this Size2 p) => new PixelSize(p.Width, p.Height);
+
+        public static Vector ToAvaloniaVector(this Size2F p) => new Vector(p.Width, p.Height);
+
         public static RawRectangleF ToSharpDX(this Rect r)
         {
             return new RawRectangleF((float)r.X, (float)r.Y, (float)r.Right, (float)r.Bottom);
@@ -118,14 +122,16 @@ namespace Avalonia.Direct2D1
         /// <returns>The Direct2D brush.</returns>
         public static StrokeStyle ToDirect2DStrokeStyle(this Avalonia.Media.Pen pen, Factory factory)
         {
+            var d2dLineCap = pen.LineCap.ToDirect2D();
+
             var properties = new StrokeStyleProperties
             {
                 DashStyle = DashStyle.Solid,
                 MiterLimit = (float)pen.MiterLimit,
                 LineJoin = pen.LineJoin.ToDirect2D(),
-                StartCap = pen.StartLineCap.ToDirect2D(),
-                EndCap = pen.EndLineCap.ToDirect2D(),
-                DashCap = pen.DashCap.ToDirect2D()
+                StartCap = d2dLineCap,
+                EndCap = d2dLineCap,
+                DashCap = d2dLineCap
             };
             float[] dashes = null;
             if (pen.DashStyle?.Dashes != null && pen.DashStyle.Dashes.Count > 0)

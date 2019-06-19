@@ -5,11 +5,14 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering;
+using Avalonia.Rendering.SceneGraph;
 using Avalonia.Rendering.Utilities;
 using Avalonia.Utilities;
+using Avalonia.Visuals.Media.Imaging;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -17,9 +20,9 @@ namespace Avalonia.Skia
     /// <summary>
     /// Skia based drawing context.
     /// </summary>
-    public class DrawingContextImpl : IDrawingContextImpl
+    internal class DrawingContextImpl : IDrawingContextImpl, ISkiaDrawingContextImpl
     {
-        private readonly IDisposable[] _disposables;
+        private IDisposable[] _disposables;
         private readonly Vector _dpi;
         private readonly Stack<PaintWrapper> _maskStack = new Stack<PaintWrapper>();
         private readonly Stack<double> _opacityStack = new Stack<double>();
@@ -28,7 +31,8 @@ namespace Avalonia.Skia
         private double _currentOpacity = 1.0f;
         private readonly bool _canTextUseLcdRendering;
         private Matrix _currentTransform;
-
+        private GRContext _grContext;
+        private bool _disposed;
         /// <summary>
         /// Context create info.
         /// </summary>
@@ -53,6 +57,11 @@ namespace Avalonia.Skia
             /// Render text without Lcd rendering.
             /// </summary>
             public bool DisableTextLcdRendering;
+
+            /// <summary>
+            /// GPU-accelerated context (optional)
+            /// </summary>
+            public GRContext GrContext;
         }
 
         /// <summary>
@@ -66,7 +75,10 @@ namespace Avalonia.Skia
             _visualBrushRenderer = createInfo.VisualBrushRenderer;
             _disposables = disposables;
             _canTextUseLcdRendering = !createInfo.DisableTextLcdRendering;
-
+            _grContext = createInfo.GrContext;
+            if (_grContext != null)
+                Monitor.Enter(_grContext);
+            
             Canvas = createInfo.Canvas;
 
             if (Canvas == null)
@@ -88,6 +100,8 @@ namespace Avalonia.Skia
         /// </summary>
         public SKCanvas Canvas { get; }
 
+        SKCanvas ISkiaDrawingContextImpl.SkCanvas => Canvas;
+
         /// <inheritdoc />
         public void Clear(Color color)
         {
@@ -95,16 +109,38 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public void DrawImage(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect)
+        public void DrawImage(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect, BitmapInterpolationMode bitmapInterpolationMode)
         {
-            var drawableImage = (IDrawableBitmapImpl) source.Item;
+            var drawableImage = (IDrawableBitmapImpl)source.Item;
             var s = sourceRect.ToSKRect();
             var d = destRect.ToSKRect();
 
             using (var paint =
-                new SKPaint {Color = new SKColor(255, 255, 255, (byte) (255 * opacity * _currentOpacity))})
+                new SKPaint
+                {
+                    Color = new SKColor(255, 255, 255, (byte)(255 * opacity * _currentOpacity))
+                })
             {
+                paint.FilterQuality = GetInterpolationMode(bitmapInterpolationMode);
+
                 drawableImage.Draw(this, s, d, paint);
+            }
+        }
+
+        private static SKFilterQuality GetInterpolationMode(BitmapInterpolationMode interpolationMode)
+        {
+            switch (interpolationMode)
+            {
+                case BitmapInterpolationMode.LowQuality:
+                    return SKFilterQuality.Low;
+                case BitmapInterpolationMode.MediumQuality:
+                    return SKFilterQuality.Medium;
+                case BitmapInterpolationMode.HighQuality:
+                    return SKFilterQuality.High;
+                case BitmapInterpolationMode.Default:
+                    return SKFilterQuality.None;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(interpolationMode), interpolationMode, null);
             }
         }
 
@@ -112,7 +148,7 @@ namespace Avalonia.Skia
         public void DrawImage(IRef<IBitmapImpl> source, IBrush opacityMask, Rect opacityMaskRect, Rect destRect)
         {
             PushOpacityMask(opacityMask, opacityMaskRect);
-            DrawImage(source, 1, new Rect(0, 0, source.Item.PixelWidth, source.Item.PixelHeight), destRect);
+            DrawImage(source, 1, new Rect(0, 0, source.Item.PixelSize.Width, source.Item.PixelSize.Height), destRect, BitmapInterpolationMode.Default);
             PopOpacityMask();
         }
 
@@ -185,7 +221,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawText(IBrush foreground, Point origin, IFormattedTextImpl text)
         {
-            using (var paint = CreatePaint(foreground, text.Size))
+            using (var paint = CreatePaint(foreground, text.Bounds.Size))
             {
                 var textImpl = (FormattedTextImpl) text;
                 textImpl.Draw(this, Canvas, origin.ToSKPoint(), paint, _canTextUseLcdRendering);
@@ -195,10 +231,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public IRenderTargetBitmapImpl CreateLayer(Size size)
         {
-            var normalizedDpi = new Vector(_dpi.X / SkiaPlatform.DefaultDpi.X, _dpi.Y / SkiaPlatform.DefaultDpi.Y);
-            var pixelSize = size * normalizedDpi;
-
-            return CreateRenderTarget((int) pixelSize.Width, (int) pixelSize.Height, _dpi);
+            return CreateRenderTarget(size);
         }
 
         /// <inheritdoc />
@@ -230,14 +263,26 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public virtual void Dispose()
         {
-            if (_disposables == null)
-            {
+            if(_disposed)
                 return;
-            }
-
-            foreach (var disposable in _disposables)
+            try
             {
-                disposable?.Dispose();
+                if (_grContext != null)
+                {
+                    Monitor.Exit(_grContext);
+                    _grContext = null;
+                }
+
+                if (_disposables != null)
+                {
+                    foreach (var disposable in _disposables)
+                        disposable?.Dispose();
+                    _disposables = null;
+                }
+            }
+            finally
+            {
+                _disposed = true;
             }
         }
 
@@ -253,6 +298,8 @@ namespace Avalonia.Skia
         {
             Canvas.Restore();
         }
+
+        public void Custom(ICustomDrawOperation custom) => custom.Render(this);
 
         /// <inheritdoc />
         public void PushOpacityMask(IBrush mask, Rect bounds)
@@ -359,23 +406,25 @@ namespace Avalonia.Skia
         /// <param name="tileBrushImage">Tile brush image.</param>
         private void ConfigureTileBrush(ref PaintWrapper paintWrapper, Size targetSize, ITileBrush tileBrush, IDrawableBitmapImpl tileBrushImage)
         {
-            var calc = new TileBrushCalculator(tileBrush,
-                    new Size(tileBrushImage.PixelWidth, tileBrushImage.PixelHeight), targetSize);
-
-            var intermediate = CreateRenderTarget(
-                (int)calc.IntermediateSize.Width,
-                (int)calc.IntermediateSize.Height, _dpi);
+            var calc = new TileBrushCalculator(tileBrush, tileBrushImage.PixelSize.ToSizeWithDpi(_dpi), targetSize);
+            var intermediate = CreateRenderTarget(calc.IntermediateSize);
 
             paintWrapper.AddDisposable(intermediate);
 
             using (var context = intermediate.CreateDrawingContext(null))
             {
-                var rect = new Rect(0, 0, tileBrushImage.PixelWidth, tileBrushImage.PixelHeight);
+                var sourceRect = new Rect(tileBrushImage.PixelSize.ToSizeWithDpi(96));
+                var targetRect = new Rect(tileBrushImage.PixelSize.ToSizeWithDpi(_dpi));
 
                 context.Clear(Colors.Transparent);
                 context.PushClip(calc.IntermediateClip);
                 context.Transform = calc.IntermediateTransform;
-                context.DrawImage(RefCountable.CreateUnownedNotClonable(tileBrushImage), 1, rect, rect);
+                context.DrawImage(
+                    RefCountable.CreateUnownedNotClonable(tileBrushImage),
+                    1,
+                    sourceRect,
+                    targetRect,
+                    tileBrush.BitmapInterpolationMode);
                 context.PopClip();
             }
 
@@ -402,7 +451,14 @@ namespace Avalonia.Skia
             var image = intermediate.SnapshotImage();
             paintWrapper.AddDisposable(image);
 
-            using (var shader = image.ToShader(tileX, tileY, tileTransform))
+            var paintTransform = default(SKMatrix);
+
+            SKMatrix.Concat(
+                ref paintTransform,
+                tileTransform,
+                SKMatrix.MakeScale((float)(96.0 / _dpi.X), (float)(96.0 / _dpi.Y)));
+
+            using (var shader = image.ToShader(tileX, tileY, paintTransform))
             {
                 paintWrapper.Paint.Shader = shader;
             }
@@ -426,7 +482,7 @@ namespace Avalonia.Skia
 
             if (intermediateSize.Width >= 1 && intermediateSize.Height >= 1)
             {
-                var intermediate = CreateRenderTarget((int)intermediateSize.Width, (int)intermediateSize.Height, _dpi);
+                var intermediate = CreateRenderTarget(intermediateSize);
 
                 using (var ctx = intermediate.CreateDrawingContext(visualBrushRenderer))
                 {
@@ -450,7 +506,6 @@ namespace Avalonia.Skia
         {
             var paint = new SKPaint
             {
-                IsStroke = false,
                 IsAntialias = true
             };
 
@@ -484,7 +539,7 @@ namespace Avalonia.Skia
             }
             else
             {
-                tileBrushImage = (IDrawableBitmapImpl) (tileBrush as IImageBrush)?.Source?.PlatformImpl.Item;
+                tileBrushImage = (IDrawableBitmapImpl)(tileBrush as IImageBrush)?.Source?.PlatformImpl.Item;
             }
 
             if (tileBrush != null && tileBrushImage != null)
@@ -507,6 +562,13 @@ namespace Avalonia.Skia
         /// <returns></returns>
         private PaintWrapper CreatePaint(Pen pen, Size targetSize)
         {
+            // In Skia 0 thickness means - use hairline rendering
+            // and for us it means - there is nothing rendered.
+            if (pen.Thickness == 0d)
+            {
+                return default;
+            }
+
             var rv = CreatePaint(pen.Brush, targetSize);
             var paint = rv.Paint;
 
@@ -516,25 +578,17 @@ namespace Avalonia.Skia
             // Need to modify dashes due to Skia modifying their lengths
             // https://docs.microsoft.com/en-us/xamarin/xamarin-forms/user-interface/graphics/skiasharp/paths/dots
             // TODO: Still something is off, dashes are now present, but don't look the same as D2D ones.
-            float dashLengthModifier;
-            float gapLengthModifier;
 
-            switch (pen.StartLineCap)
+            switch (pen.LineCap)
             {
                 case PenLineCap.Round:
                     paint.StrokeCap = SKStrokeCap.Round;
-                    dashLengthModifier = -paint.StrokeWidth;
-                    gapLengthModifier = paint.StrokeWidth;
                     break;
                 case PenLineCap.Square:
                     paint.StrokeCap = SKStrokeCap.Square;
-                    dashLengthModifier = -paint.StrokeWidth;
-                    gapLengthModifier = paint.StrokeWidth;
                     break;
                 default:
                     paint.StrokeCap = SKStrokeCap.Butt;
-                    dashLengthModifier = 0.0f;
-                    gapLengthModifier = 0.0f;
                     break;
             }
 
@@ -560,13 +614,12 @@ namespace Avalonia.Skia
 
                 for (var i = 0; i < srcDashes.Count; ++i)
                 {
-                    var lengthModifier = i % 2 == 0 ? dashLengthModifier : gapLengthModifier;
-
-                    // Avalonia dash lengths are relative, but Skia takes absolute sizes - need to scale
-                    dashesArray[i] = (float) srcDashes[i] * paint.StrokeWidth + lengthModifier;
+                    dashesArray[i] = (float) srcDashes[i] * paint.StrokeWidth;
                 }
 
-                var pe = SKPathEffect.CreateDash(dashesArray, (float) pen.DashStyle.Offset);
+                var offset = (float)(pen.DashStyle.Offset * pen.Thickness);
+
+                var pe = SKPathEffect.CreateDash(dashesArray, offset);
 
                 paint.PathEffect = pe;
                 rv.AddDisposable(pe);
@@ -578,20 +631,20 @@ namespace Avalonia.Skia
         /// <summary>
         /// Create new render target compatible with this drawing context.
         /// </summary>
-        /// <param name="width">Width.</param>
-        /// <param name="height">Height.</param>
-        /// <param name="dpi">Drawing dpi.</param>
+        /// <param name="size">The size of the render target in DIPs.</param>
         /// <param name="format">Pixel format.</param>
         /// <returns></returns>
-        private SurfaceRenderTarget CreateRenderTarget(int width, int height, Vector dpi, PixelFormat? format = null)
+        private SurfaceRenderTarget CreateRenderTarget(Size size, PixelFormat? format = null)
         {
+            var pixelSize = PixelSize.FromSizeWithDpi(size, _dpi);
             var createInfo = new SurfaceRenderTarget.CreateInfo
             {
-                Width = width,
-                Height = height,
-                Dpi = dpi,
+                Width = pixelSize.Width,
+                Height = pixelSize.Height,
+                Dpi = _dpi,
                 Format = format,
-                DisableTextLcdRendering = !_canTextUseLcdRendering
+                DisableTextLcdRendering = !_canTextUseLcdRendering,
+                GrContext = _grContext
             };
 
             return new SurfaceRenderTarget(createInfo);

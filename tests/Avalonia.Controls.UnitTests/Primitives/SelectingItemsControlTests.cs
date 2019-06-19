@@ -3,6 +3,8 @@
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using Avalonia.Collections;
 using Avalonia.Controls.Presenters;
@@ -13,12 +15,15 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Data;
 using Avalonia.UnitTests;
+using Moq;
 using Xunit;
 
 namespace Avalonia.Controls.UnitTests.Primitives
 {
     public class SelectingItemsControlTests
     {
+        private MouseTestHelper _helper = new MouseTestHelper();
+        
         [Fact]
         public void SelectedIndex_Should_Initially_Be_Minus_1()
         {
@@ -144,6 +149,34 @@ namespace Avalonia.Controls.UnitTests.Primitives
 
             target.ApplyTemplate();
             target.SelectedItem = items[1];
+
+            Assert.Equal(items[1], target.SelectedItem);
+            Assert.Equal(1, target.SelectedIndex);
+        }
+
+        [Fact]
+        public void SelectedIndex_Item_Is_Updated_As_Items_Removed_When_Last_Item_Is_Selected()
+        {
+            var items = new ObservableCollection<string>
+            {
+               "Foo",
+               "Bar",
+               "FooBar"
+            };
+
+            var target = new SelectingItemsControl
+            {
+                Items = items,
+                Template = Template(),
+            };
+
+            target.ApplyTemplate();
+            target.SelectedItem = items[2];
+
+            Assert.Equal(items[2], target.SelectedItem);
+            Assert.Equal(2, target.SelectedIndex);
+
+            items.RemoveAt(0);
 
             Assert.Equal(items[1], target.SelectedItem);
             Assert.Equal(1, target.SelectedIndex);
@@ -308,6 +341,33 @@ namespace Avalonia.Controls.UnitTests.Primitives
 
             Assert.Null(target.SelectedItem);
             Assert.Equal(-1, target.SelectedIndex);
+        }
+
+        [Fact]
+        public void Moving_Selected_Item_Should_Update_Selection()
+        {
+            var items = new AvaloniaList<Item>
+            {
+                new Item(),
+                new Item(),
+            };
+
+            var target = new SelectingItemsControl
+            {
+                Items = items,
+                Template = Template(),
+            };
+
+            target.ApplyTemplate();
+            target.SelectedIndex = 0;
+
+            Assert.Equal(items[0], target.SelectedItem);
+            Assert.Equal(0, target.SelectedIndex);
+
+            items.Move(0, 1);
+
+            Assert.Equal(items[1], target.SelectedItem);
+            Assert.Equal(1, target.SelectedIndex);
         }
 
         [Fact]
@@ -617,12 +677,7 @@ namespace Avalonia.Controls.UnitTests.Primitives
 
             target.ApplyTemplate();
             target.Presenter.ApplyTemplate();
-
-            target.Presenter.Panel.Children[1].RaiseEvent(new PointerPressedEventArgs
-            {
-                RoutedEvent = InputElement.PointerPressedEvent,
-                MouseButton = MouseButton.Left,
-            });
+            _helper.Down((Interactive)target.Presenter.Panel.Children[1]);
 
             var panel = target.Presenter.Panel;
 
@@ -645,17 +700,87 @@ namespace Avalonia.Controls.UnitTests.Primitives
             target.ApplyTemplate();
             target.Presenter.ApplyTemplate();
 
-            target.Presenter.Panel.Children[1].RaiseEvent(new PointerPressedEventArgs
-            {
-                RoutedEvent = InputElement.PointerPressedEvent,
-                MouseButton = MouseButton.Left,
-            });
+            _helper.Down(target.Presenter.Panel.Children[1]);
 
             items.RemoveAt(1);
 
             var panel = target.Presenter.Panel;
 
             Assert.Null(KeyboardNavigation.GetTabOnceActiveElement((InputElement)panel));
+        }
+
+        [Fact]
+        public void Resetting_Items_Collection_Should_Retain_Selection()
+        {
+            var itemsMock = new Mock<List<string>>();
+            var itemsMockAsINCC = itemsMock.As<INotifyCollectionChanged>();
+
+            itemsMock.Object.AddRange(new[] { "Foo", "Bar", "Baz" });
+            var target = new SelectingItemsControl
+            {
+                Items = itemsMock.Object
+            };
+
+            target.SelectedIndex = 1;
+
+            itemsMockAsINCC.Raise(e => e.CollectionChanged += null, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+
+            Assert.True(target.SelectedIndex == 1);
+        }
+
+        [Fact]
+        public void Binding_With_DelayedBinding_And_Initialization_Where_DataContext_Is_Root_Works()
+        {
+            // Test for #1932.
+            var root = new RootWithItems();
+
+            root.BeginInit();
+            root.DataContext = root;
+
+            var target = new ListBox();
+            target.BeginInit();
+            root.Child = target;
+
+            DelayedBinding.Add(target, ItemsControl.ItemsProperty, new Binding(nameof(RootWithItems.Items)));
+            DelayedBinding.Add(target, ListBox.SelectedItemProperty, new Binding(nameof(RootWithItems.Selected)));
+            target.EndInit();
+            root.EndInit();
+
+            Assert.Equal("b", target.SelectedItem);
+        }
+
+        [Fact]
+        public void Mode_For_SelectedIndex_Is_TwoWay_By_Default()
+        {
+            var items = new[]
+            {
+                new Item(),
+                new Item(),
+                new Item(),
+            };
+
+            var vm = new MasterViewModel
+            {
+                Child = new ChildViewModel
+                {
+                    Items = items,
+                    SelectedIndex = 1,
+                }
+            };
+
+            var target = new SelectingItemsControl { DataContext = vm };
+            var itemsBinding = new Binding("Child.Items");
+            var selectedIndBinding = new Binding("Child.SelectedIndex");
+
+            target.Bind(SelectingItemsControl.ItemsProperty, itemsBinding);
+            target.Bind(SelectingItemsControl.SelectedIndexProperty, selectedIndBinding);
+
+            Assert.Equal(1, target.SelectedIndex);
+
+            target.SelectedIndex = 2;
+
+            Assert.Equal(2, target.SelectedIndex);
+            Assert.Equal(2, vm.Child.SelectedIndex);
         }
 
         private FuncControlTemplate Template()
@@ -694,6 +819,13 @@ namespace Avalonia.Controls.UnitTests.Primitives
         {
             public IList<Item> Items { get; set; }
             public Item SelectedItem { get; set; }
+            public int SelectedIndex { get; set; }
+        }
+
+        private class RootWithItems : TestRoot
+        {
+            public List<string> Items { get; set; } = new List<string>() { "a", "b", "c", "d", "e" };
+            public string Selected { get; set; } = "b";
         }
     }
 }

@@ -10,8 +10,8 @@ using Avalonia.Collections;
 using Avalonia.Controls.Generators;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Metadata;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 
@@ -54,7 +54,8 @@ namespace Avalonia.Controls.Primitives
                 nameof(SelectedIndex),
                 o => o.SelectedIndex,
                 (o, v) => o.SelectedIndex = v,
-                unsetValue: -1);
+                unsetValue: -1,
+                defaultBindingMode: BindingMode.TwoWay);
 
         /// <summary>
         /// Defines the <see cref="SelectedItem"/> property.
@@ -63,7 +64,7 @@ namespace Avalonia.Controls.Primitives
             AvaloniaProperty.RegisterDirect<SelectingItemsControl, object>(
                 nameof(SelectedItem),
                 o => o.SelectedItem,
-                (o, v) => o.SelectedItem = v, 
+                (o, v) => o.SelectedItem = v,
                 defaultBindingMode: BindingMode.TwoWay);
 
         /// <summary>
@@ -89,7 +90,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public static readonly RoutedEvent<RoutedEventArgs> IsSelectedChangedEvent =
             RoutedEvent.Register<SelectingItemsControl, RoutedEventArgs>(
-                "IsSelectedChanged", 
+                "IsSelectedChanged",
                 RoutingStrategies.Bubble);
 
         /// <summary>
@@ -97,10 +98,10 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public static readonly RoutedEvent<SelectionChangedEventArgs> SelectionChangedEvent =
             RoutedEvent.Register<SelectingItemsControl, SelectionChangedEventArgs>(
-                "SelectionChanged", 
+                "SelectionChanged",
                 RoutingStrategies.Bubble);
 
-        private static readonly IList Empty = new object[0];
+        private static readonly IList Empty = Array.Empty<object>();
 
         private int _selectedIndex = -1;
         private object _selectedItem;
@@ -290,12 +291,12 @@ namespace Avalonia.Controls.Primitives
         /// <inheritdoc/>
         public override void EndInit()
         {
-            base.EndInit();
-
             if (--_updateCount == 0)
             {
                 UpdateFinished();
             }
+
+            base.EndInit();
         }
 
         /// <summary>
@@ -325,14 +326,19 @@ namespace Avalonia.Controls.Primitives
 
             if (_updateCount == 0)
             {
+                var newIndex = -1;
+
                 if (SelectedIndex != -1)
                 {
-                    SelectedIndex = IndexOf((IEnumerable)e.NewValue, SelectedItem);
+                    newIndex = IndexOf((IEnumerable)e.NewValue, SelectedItem);
                 }
-                else if (AlwaysSelected && Items != null && Items.Cast<object>().Any())
+
+                if (AlwaysSelected && Items != null && Items.Cast<object>().Any())
                 {
-                    SelectedIndex = 0;
+                    newIndex = 0;
                 }
+
+                SelectedIndex = newIndex;
             }
         }
 
@@ -360,7 +366,7 @@ namespace Avalonia.Controls.Primitives
                     {
                         if (!AlwaysSelected)
                         {
-                            SelectedIndex = -1;
+                            selectedIndex = SelectedIndex = -1;
                         }
                         else
                         {
@@ -368,10 +374,16 @@ namespace Avalonia.Controls.Primitives
                         }
                     }
 
+                    var items = Items?.Cast<object>();
+                    if (selectedIndex >= items.Count())
+                    {
+                        selectedIndex = SelectedIndex = items.Count() - 1;
+                    }
                     break;
 
+                case NotifyCollectionChangedAction.Move:
                 case NotifyCollectionChangedAction.Reset:
-                    SelectedIndex = IndexOf(e.NewItems, SelectedItem);
+                    SelectedIndex = IndexOf(Items, SelectedItem);
                     break;
             }
         }
@@ -427,9 +439,12 @@ namespace Avalonia.Controls.Primitives
             {
                 if (i.ContainerControl != null && i.Item != null)
                 {
-                    MarkContainerSelected(
-                        i.ContainerControl,
-                        SelectedItems.Contains(i.Item));
+                    var ms = MemberSelector;
+                    bool selected = ms == null ? 
+                        SelectedItems.Contains(i.Item) : 
+                        SelectedItems.OfType<object>().Any(v => Equals(ms.Select(v), i.Item));
+
+                    MarkContainerSelected(i.ContainerControl, selected);
                 }
             }
         }
@@ -450,6 +465,59 @@ namespace Avalonia.Controls.Primitives
             {
                 UpdateFinished();
             }
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (!e.Handled)
+            {
+                var keymap = AvaloniaLocator.Current.GetService<PlatformHotkeyConfiguration>();
+                bool Match(List<KeyGesture> gestures) => gestures.Any(g => g.Matches(e));
+
+                if (this.SelectionMode == SelectionMode.Multiple && Match(keymap.SelectAll))
+                {
+                    SynchronizeItems(SelectedItems, Items?.Cast<object>());
+                    e.Handled = true;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Moves the selection in the specified direction relative to the current selection.
+        /// </summary>
+        /// <param name="direction">The direction to move.</param>
+        /// <param name="wrap">Whether to wrap when the selection reaches the first or last item.</param>
+        /// <returns>True if the selection was moved; otherwise false.</returns>
+        protected bool MoveSelection(NavigationDirection direction, bool wrap)
+        {
+            var from = SelectedIndex != -1 ? ItemContainerGenerator.ContainerFromIndex(SelectedIndex) : null;
+            return MoveSelection(from, direction, wrap);
+        }
+
+        /// <summary>
+        /// Moves the selection in the specified direction relative to the specified container.
+        /// </summary>
+        /// <param name="from">The container which serves as a starting point for the movement.</param>
+        /// <param name="direction">The direction to move.</param>
+        /// <param name="wrap">Whether to wrap when the selection reaches the first or last item.</param>
+        /// <returns>True if the selection was moved; otherwise false.</returns>
+        protected bool MoveSelection(IControl from, NavigationDirection direction, bool wrap)
+        {
+            if (Presenter?.Panel is INavigableContainer container &&
+                GetNextControl(container, direction, from, wrap) is IControl next)
+            {
+                var index = ItemContainerGenerator.IndexFromContainer(next);
+
+                if (index != -1)
+                {
+                    SelectedIndex = index;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -481,7 +549,7 @@ namespace Avalonia.Controls.Primitives
                     else if (multi && range)
                     {
                         SynchronizeItems(
-                            SelectedItems, 
+                            SelectedItems,
                             GetRange(Items, SelectedIndex, index));
                     }
                     else
@@ -543,7 +611,7 @@ namespace Avalonia.Controls.Primitives
         }
 
         /// <summary>
-        /// Updates the selection based on an event that may have originated in a container that 
+        /// Updates the selection based on an event that may have originated in a container that
         /// belongs to the control.
         /// </summary>
         /// <param name="eventSource">The control that raised the event.</param>
@@ -555,7 +623,7 @@ namespace Avalonia.Controls.Primitives
         /// false.
         /// </returns>
         protected bool UpdateSelectionFromEventSource(
-            IInteractive eventSource, 
+            IInteractive eventSource,
             bool select = true,
             bool rangeModifier = false,
             bool toggleModifier = false)
@@ -569,6 +637,38 @@ namespace Avalonia.Controls.Primitives
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Makes a list of objects equal another.
+        /// </summary>
+        /// <param name="items">The items collection.</param>
+        /// <param name="desired">The desired items.</param>
+        internal static void SynchronizeItems(IList items, IEnumerable<object> desired)
+        {
+            var index = 0;
+
+            foreach (object item in desired)
+            {
+                int itemIndex = items.IndexOf(item);
+
+                if (itemIndex == -1)
+                {
+                    items.Insert(index, item);
+                }
+                else if(itemIndex != index)
+                {
+                    items.RemoveAt(itemIndex);
+                    items.Insert(index, item);
+                }
+
+                ++index;
+            }
+
+            while (index < items.Count)
+            {
+                items.RemoveAt(items.Count - 1);
+            }
         }
 
         /// <summary>
@@ -589,38 +689,6 @@ namespace Avalonia.Controls.Primitives
             }
 
             yield return list[last];
-        }
-
-        /// <summary>
-        /// Makes a list of objects equal another.
-        /// </summary>
-        /// <param name="items">The items collection.</param>
-        /// <param name="desired">The desired items.</param>
-        private static void SynchronizeItems(IList items, IEnumerable<object> desired)
-        {
-            int index = 0;
-
-            foreach (var i in desired)
-            {
-                if (index < items.Count)
-                {
-                    if (items[index] != i)
-                    {
-                        items[index] = i;
-                    }
-                }
-                else
-                {
-                    items.Add(i);
-                }
-
-                ++index;
-            }
-
-            while (index < items.Count)
-            {
-                items.RemoveAt(items.Count - 1);
-            }
         }
 
         /// <summary>
@@ -767,12 +835,10 @@ namespace Avalonia.Controls.Primitives
                             SelectedIndex = -1;
                         }
                     }
-                    else
+
+                    foreach (var item in e.OldItems)
                     {
-                        foreach (var item in e.OldItems)
-                        {
-                            MarkItemSelected(item, false);
-                        }
+                        MarkItemSelected(item, false);
                     }
 
                     removed = e.OldItems;
@@ -831,8 +897,8 @@ namespace Avalonia.Controls.Primitives
                         RaisePropertyChanged(SelectedItemProperty, oldItem, item, BindingPriority.LocalValue);
                     }
 
-                    added = e.OldItems;
-                    removed = e.NewItems;
+                    added = e.NewItems;
+                    removed = e.OldItems;
                     break;
             }
 

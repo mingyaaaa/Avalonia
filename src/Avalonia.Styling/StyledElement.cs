@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
-using System.Text;
 using Avalonia.Animation;
 using Avalonia.Collections;
 using Avalonia.Controls;
@@ -50,8 +50,11 @@ namespace Avalonia
         /// <summary>
         /// Defines the <see cref="TemplatedParent"/> property.
         /// </summary>
-        public static readonly StyledProperty<ITemplatedControl> TemplatedParentProperty =
-            AvaloniaProperty.Register<StyledElement, ITemplatedControl>(nameof(TemplatedParent), inherits: true);
+        public static readonly DirectProperty<StyledElement, ITemplatedControl> TemplatedParentProperty =
+            AvaloniaProperty.RegisterDirect<StyledElement, ITemplatedControl>(
+                nameof(TemplatedParent),
+                o => o.TemplatedParent,
+                (o ,v) => o.TemplatedParent = v);
 
         private int _initCount;
         private string _name;
@@ -63,6 +66,7 @@ namespace Avalonia
         private Styles _styles;
         private bool _styled;
         private Subject<IStyleable> _styleDetach = new Subject<IStyleable>();
+        private ITemplatedControl _templatedParent;
         private bool _dataContextUpdating;
 
         /// <summary>
@@ -160,7 +164,7 @@ namespace Avalonia
         /// <para>
         /// Even though this property can be set, the setter is only intended for use in object
         /// initializers. Assigning to this property does not change the underlying collection,
-        /// it simply clears the existing collection and addds the contents of the assigned
+        /// it simply clears the existing collection and adds the contents of the assigned
         /// collection.
         /// </para>
         /// </remarks>
@@ -270,8 +274,8 @@ namespace Avalonia
         /// </summary>
         public ITemplatedControl TemplatedParent
         {
-            get { return GetValue(TemplatedParentProperty); }
-            internal set { SetValue(TemplatedParentProperty, value); }
+            get => _templatedParent;
+            internal set => SetAndRaise(TemplatedParentProperty, ref _templatedParent, value);
         }
 
         /// <summary>
@@ -411,7 +415,7 @@ namespace Avalonia
         }
 
         /// <inheritdoc/>
-        bool IResourceProvider.TryGetResource(string key, out object value)
+        bool IResourceProvider.TryGetResource(object key, out object value)
         {
             value = null;
             return (_resources?.TryGetResource(key, out value) ?? false) ||
@@ -469,7 +473,7 @@ namespace Avalonia
 
                     if (newRoot == null)
                     {
-                        throw new AvaloniaInternalException("Parent is atttached to logical tree but cannot find root.");
+                        throw new AvaloniaInternalException("Parent is attached to logical tree but cannot find root.");
                     }
 
                     var e = new LogicalTreeAttachmentEventArgs(newRoot);
@@ -494,22 +498,53 @@ namespace Avalonia
         /// </summary>
         /// <param name="property">The property.</param>
         /// <param name="className">The pseudo-class.</param>
+        [Obsolete("Use PseudoClass<TOwner> and specify the control type.")]
         protected static void PseudoClass(AvaloniaProperty<bool> property, string className)
         {
-            PseudoClass(property, x => x, className);
+            PseudoClass<StyledElement>(property, className);
+        }
+
+        /// <summary>
+        /// Adds a pseudo-class to be set when a property is true.
+        /// </summary>
+        /// <typeparam name="TOwner">The type to apply the pseudo-class to.</typeparam>
+        /// <param name="property">The property.</param>
+        /// <param name="className">The pseudo-class.</param>
+        protected static void PseudoClass<TOwner>(AvaloniaProperty<bool> property, string className)
+            where TOwner : class, IStyledElement
+        {
+            PseudoClass<TOwner, bool>(property, x => x, className);
         }
 
         /// <summary>
         /// Adds a pseudo-class to be set when a property equals a certain value.
         /// </summary>
-        /// <typeparam name="T">The type of the property.</typeparam>
+        /// <typeparam name="TProperty">The type of the property.</typeparam>
         /// <param name="property">The property.</param>
         /// <param name="selector">Returns a boolean value based on the property value.</param>
         /// <param name="className">The pseudo-class.</param>
-        protected static void PseudoClass<T>(
-            AvaloniaProperty<T> property,
-            Func<T, bool> selector,
+        [Obsolete("Use PseudoClass<TOwner, TProperty> and specify the control type.")]
+        protected static void PseudoClass<TProperty>(
+            AvaloniaProperty<TProperty> property,
+            Func<TProperty, bool> selector,
             string className)
+        {
+            PseudoClass<StyledElement, TProperty>(property, selector, className);
+        }
+
+        /// <summary>
+        /// Adds a pseudo-class to be set when a property equals a certain value.
+        /// </summary>
+        /// <typeparam name="TProperty">The type of the property.</typeparam>
+        /// <typeparam name="TOwner">The type to apply the pseudo-class to.</typeparam>
+        /// <param name="property">The property.</param>
+        /// <param name="selector">Returns a boolean value based on the property value.</param>
+        /// <param name="className">The pseudo-class.</param>
+        protected static void PseudoClass<TOwner, TProperty>(
+            AvaloniaProperty<TProperty> property,
+            Func<TProperty, bool> selector,
+            string className)
+                where TOwner : class, IStyledElement
         {
             Contract.Requires<ArgumentNullException>(property != null);
             Contract.Requires<ArgumentNullException>(selector != null);
@@ -521,10 +556,10 @@ namespace Avalonia
             }
 
             property.Changed.Merge(property.Initialized)
-                .Where(e => e.Sender is StyledElement)
+                .Where(e => e.Sender is TOwner)
                 .Subscribe(e =>
                 {
-                    if (selector((T)e.NewValue))
+                    if (selector((TProperty)e.NewValue))
                     {
                         ((StyledElement)e.Sender).PseudoClasses.Add(className);
                     }
@@ -642,23 +677,6 @@ namespace Avalonia
             if (Name != null)
             {
                 _nameScope?.Register(Name, this);
-
-                var visualParent = Parent as StyledElement;
-
-                if (this is INameScope && visualParent != null)
-                {
-                    // If we have e.g. a named UserControl in a window then we want that control
-                    // to be findable by name from the Window, so register with both name scopes.
-                    // This differs from WPF's behavior in that XAML manually registers controls 
-                    // with name scopes based on the XAML file in which the name attribute appears,
-                    // but we're trying to avoid XAML magic in Avalonia in order to made code-
-                    // created UIs easy. This will cause problems if a UserControl declares a name
-                    // in its XAML and that control is included multiple times in a parent control
-                    // (as the name will be duplicated), however at the moment I'm fine with saying
-                    // "don't do that".
-                    var parentNameScope = NameScope.FindNameScope(visualParent);
-                    parentNameScope?.Register(Name, this);
-                }
             }
         }
 
@@ -749,7 +767,7 @@ namespace Avalonia
                     break;
 
                 case NotifyCollectionChangedAction.Reset:
-                    throw new NotSupportedException("Reset should not be signalled on LogicalChildren collection");
+                    throw new NotSupportedException("Reset should not be signaled on LogicalChildren collection");
             }
         }
 

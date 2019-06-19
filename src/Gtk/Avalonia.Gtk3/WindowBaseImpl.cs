@@ -1,29 +1,30 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using Avalonia.Controls;
 using Avalonia.Gtk3.Interop;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
+using Avalonia.OpenGL;
 using Avalonia.Platform;
+using Avalonia.Platform.Interop;
 using Avalonia.Rendering;
 using Avalonia.Threading;
 
 namespace Avalonia.Gtk3
 {
-    abstract class WindowBaseImpl : IWindowBaseImpl, IPlatformHandle
+    abstract class WindowBaseImpl : IWindowBaseImpl, IPlatformHandle, EglGlPlatformSurface.IEglWindowGlPlatformSurfaceInfo
     {
         public readonly GtkWindow GtkWidget;
         private IInputRoot _inputRoot;
         private readonly GtkImContext _imContext;
         private readonly FramebufferManager _framebuffer;
+        private readonly EglGlPlatformSurface _egl;
         protected readonly List<IDisposable> Disposables = new List<IDisposable>();
         private Size _lastSize;
-        private Point _lastPosition;
+        private PixelPoint _lastPosition;
         private double _lastScaling;
         private uint _lastKbdEvent;
         private uint _lastSmoothScrollEvent;
@@ -38,7 +39,13 @@ namespace Avalonia.Gtk3
         {
             
             GtkWidget = gtkWidget;
-            _framebuffer = new FramebufferManager(this);
+            
+            var glf = AvaloniaLocator.Current.GetService<IWindowingPlatformGlFeature>() as EglGlPlatformFeature;
+            if (glf != null)
+                _egl = new EglGlPlatformSurface((EglDisplay)glf.Display, glf.DeferredContext, this);
+            else
+                _framebuffer = new FramebufferManager(this);
+            
             _imContext = Native.GtkImMulticontextNew();
             Disposables.Add(_imContext);
             Native.GtkWidgetSetEvents(gtkWidget, 0xFFFFFE);
@@ -59,12 +66,15 @@ namespace Avalonia.Gtk3
             Native.GtkWidgetRealize(gtkWidget);
             GdkWindowHandle = this.Handle.Handle;
             _lastSize = ClientSize;
-            if (Gtk3Platform.UseDeferredRendering)
+
+            if (_egl != null)
+                Native.GtkWidgetSetDoubleBuffered(gtkWidget, false);
+            else if (Gtk3Platform.UseDeferredRendering)
             {
                 Native.GtkWidgetSetDoubleBuffered(gtkWidget, false);
                 _gcHandle = GCHandle.Alloc(this);
-                _tickCallback = Native.GtkWidgetAddTickCallback(GtkWidget, PinnedStaticCallback, GCHandle.ToIntPtr(_gcHandle), IntPtr.Zero);
-                
+                _tickCallback = Native.GtkWidgetAddTickCallback(GtkWidget, PinnedStaticCallback,
+                    GCHandle.ToIntPtr(_gcHandle), IntPtr.Zero);
             }
         }
 
@@ -116,7 +126,7 @@ namespace Avalonia.Gtk3
             if (state.HasFlag(GdkModifierType.ShiftMask))
                 rv |= InputModifiers.Shift;
             if (state.HasFlag(GdkModifierType.Mod1Mask))
-                rv |= InputModifiers.Control;
+                rv |= InputModifiers.Alt;
             if (state.HasFlag(GdkModifierType.Button1Mask))
                 rv |= InputModifiers.LeftMouseButton;
             if (state.HasFlag(GdkModifierType.Button2Mask))
@@ -135,17 +145,17 @@ namespace Avalonia.Gtk3
         private unsafe bool OnButton(IntPtr w, IntPtr ev, IntPtr userdata)
         {
             var evnt = (GdkEventButton*)ev;
-            var e = new RawMouseEventArgs(
+            var e = new RawPointerEventArgs(
                 Gtk3Platform.Mouse,
                 evnt->time,
                 _inputRoot,
                 evnt->type == GdkEventType.ButtonRelease
                     ? evnt->button == 1
-                        ? RawMouseEventType.LeftButtonUp
-                        : evnt->button == 3 ? RawMouseEventType.RightButtonUp : RawMouseEventType.MiddleButtonUp
+                        ? RawPointerEventType.LeftButtonUp
+                        : evnt->button == 3 ? RawPointerEventType.RightButtonUp : RawPointerEventType.MiddleButtonUp
                     : evnt->button == 1
-                        ? RawMouseEventType.LeftButtonDown
-                        : evnt->button == 3 ? RawMouseEventType.RightButtonDown : RawMouseEventType.MiddleButtonDown,
+                        ? RawPointerEventType.LeftButtonDown
+                        : evnt->button == 3 ? RawPointerEventType.RightButtonDown : RawPointerEventType.MiddleButtonDown,
                 new Point(evnt->x, evnt->y), GetModifierKeys(evnt->state));
             OnInput(e);
             return true;
@@ -169,11 +179,11 @@ namespace Avalonia.Gtk3
             var evnt = (GdkEventMotion*)ev;
             var position = new Point(evnt->x, evnt->y);
             Native.GdkEventRequestMotions(ev);
-            var e = new RawMouseEventArgs(
+            var e = new RawPointerEventArgs(
                 Gtk3Platform.Mouse,
                 evnt->time,
                 _inputRoot,
-                RawMouseEventType.Move,
+                RawPointerEventType.Move,
                 position, GetModifierKeys(evnt->state));
             OnInput(e);
             
@@ -212,14 +222,14 @@ namespace Avalonia.Gtk3
         {
             var evnt = (GdkEventKey*) pev;
             _lastKbdEvent = evnt->time;
-            if (Native.GtkImContextFilterKeypress(_imContext, pev))
-                return true;
             var e = new RawKeyEventArgs(
                 Gtk3Platform.Keyboard,
                 evnt->time,
                 evnt->type == GdkEventType.KeyPress ? RawKeyEventType.KeyDown : RawKeyEventType.KeyUp,
                 Avalonia.Gtk.Common.KeyTransform.ConvertKey((GdkKey)evnt->keyval), GetModifierKeys((GdkModifierType)evnt->state));
             OnInput(e);
+            if (Native.GtkImContextFilterKeypress(_imContext, pev))
+                return true;
             return true;
         }
 
@@ -227,10 +237,10 @@ namespace Avalonia.Gtk3
         {
             var evnt = (GdkEventCrossing*) pev;
             var position = new Point(evnt->x, evnt->y);
-            OnInput(new RawMouseEventArgs(Gtk3Platform.Mouse,
+            OnInput(new RawPointerEventArgs(Gtk3Platform.Mouse,
                 evnt->time,
                 _inputRoot,
-                RawMouseEventType.Move,
+                RawPointerEventType.Move,
                 position, GetModifierKeys(evnt->state)));
             return true;
         }
@@ -255,6 +265,8 @@ namespace Avalonia.Gtk3
                 Paint?.Invoke(new Rect(ClientSize));
                 CurrentCairoContext = IntPtr.Zero;
             }
+            else
+                Paint?.Invoke(new Rect(ClientSize));
             return true;
         }
 
@@ -371,7 +383,7 @@ namespace Avalonia.Gtk3
         public Action<Rect> Paint { get; set; }
         public Action<Size> Resized { get; set; }
         public Action<double> ScalingChanged { get; set; } //TODO
-        public Action<Point> PositionChanged { get; set; }
+        public Action<PixelPoint> PositionChanged { get; set; }
 
         public void Activate() => Native.GtkWidgetActivate(GtkWidget);
 
@@ -390,7 +402,7 @@ namespace Avalonia.Gtk3
             Dispatcher.UIThread.Post(() => Input?.Invoke(args), DispatcherPriority.Input);
         }
 
-        public Point PointToClient(Point point)
+        public Point PointToClient(PixelPoint point)
         {
             int x, y;
             Native.GdkWindowGetOrigin(Native.GtkWidgetGetWindow(GtkWidget), out x, out y);
@@ -398,11 +410,11 @@ namespace Avalonia.Gtk3
             return new Point(point.X - x, point.Y - y);
         }
 
-        public Point PointToScreen(Point point)
+        public PixelPoint PointToScreen(Point point)
         {
             int x, y;
             Native.GdkWindowGetOrigin(Native.GtkWidgetGetWindow(GtkWidget), out x, out y);
-            return new Point(point.X + x, point.Y + y);
+            return new PixelPoint((int)(point.X + x), (int)(point.Y + y));
         }
 
         public void SetCursor(IPlatformHandle cursor)
@@ -412,7 +424,7 @@ namespace Avalonia.Gtk3
             Native.GdkWindowSetCursor(Native.GtkWidgetGetWindow(GtkWidget), cursor?.Handle ??  IntPtr.Zero);
         }
 
-        public void Show() => Native.GtkWindowPresent(GtkWidget);
+        public virtual void Show() => Native.GtkWindowPresent(GtkWidget);
 
         public void Hide() => Native.GtkWidgetHide(GtkWidget);
 
@@ -478,19 +490,19 @@ namespace Avalonia.Gtk3
             get;
         } = new ScreenImpl();
 
-        public Point Position
+        public PixelPoint Position
         {
             get
             {
                 int x, y;
                 Native.GtkWindowGetPosition(GtkWidget, out x, out y);
-                return new Point(x, y);
+                return new PixelPoint(x, y);
             }
             set { Native.GtkWindowMove(GtkWidget, (int)value.X, (int)value.Y); }
         }
 
         IntPtr IPlatformHandle.Handle => Native.GetNativeGdkWindowHandle(Native.GtkWidgetGetWindow(GtkWidget));
-        public IEnumerable<object> Surfaces => new object[] {Handle, _framebuffer};
+        public IEnumerable<object> Surfaces => new object[] {Handle, _egl, _framebuffer};
 
         public IRenderer CreateRenderer(IRenderRoot root)
         {
@@ -499,5 +511,17 @@ namespace Avalonia.Gtk3
                 ? (IRenderer) new DeferredRenderer(root, loop)
                 : new ImmediateRenderer(root);
         }
+
+        PixelSize EglGlPlatformSurface.IEglWindowGlPlatformSurfaceInfo.Size
+        {
+            get
+            {
+                var cs = ClientSize;
+                return new PixelSize((int)Math.Max(1, LastKnownScaleFactor * cs.Width),
+                    (int)Math.Max(1, LastKnownScaleFactor * ClientSize.Height));
+            }
+        }
+        double EglGlPlatformSurface.IEglWindowGlPlatformSurfaceInfo.Scaling => LastKnownScaleFactor;
+        IntPtr EglGlPlatformSurface.IEglWindowGlPlatformSurfaceInfo.Handle => Handle.Handle;
     }
 }

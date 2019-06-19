@@ -15,6 +15,7 @@ namespace Avalonia.Controls
     public abstract class AppBuilderBase<TAppBuilder> where TAppBuilder : AppBuilderBase<TAppBuilder>, new()
     {
         private static bool s_setupWasAlreadyCalled;
+        private Action _optionsInitializers;
 
         /// <summary>
         /// Gets or sets the <see cref="IRuntimePlatform"/> instance.
@@ -57,14 +58,14 @@ namespace Avalonia.Controls
         public Action<TAppBuilder> AfterSetupCallback { get; private set; } = builder => { };
 
         /// <summary>
-        /// Gets or sets a method to call before Startis called on the <see cref="Application"/>.
+        /// Gets or sets a method to call before Start is called on the <see cref="Application"/>.
         /// </summary>
         public Action<TAppBuilder> BeforeStartCallback { get; private set; } = builder => { };
 
-        protected AppBuilderBase(IRuntimePlatform platform, Action<TAppBuilder> platformSevices)
+        protected AppBuilderBase(IRuntimePlatform platform, Action<TAppBuilder> platformServices)
         {
             RuntimePlatform = platform;
-            RuntimePlatformServicesInitializer = () => platformSevices((TAppBuilder)this);
+            RuntimePlatformServicesInitializer = () => platformServices((TAppBuilder)this);
         }
 
         /// <summary>
@@ -145,6 +146,22 @@ namespace Avalonia.Controls
             Instance.Run(mainWindow);
         }
 
+        public delegate void AppMainDelegate(Application app, string[] args);
+
+        public void Start()
+        {
+            Setup();
+            BeforeStartCallback(Self);
+            Instance.Run();
+        }
+
+        public void Start(AppMainDelegate main, string[] args)
+        {
+            Setup();
+            BeforeStartCallback(Self);
+            main(Instance, args);
+        }
+
         /// <summary>
         /// Sets up the platform-specific services for the application, but does not run it.
         /// </summary>
@@ -201,7 +218,7 @@ namespace Avalonia.Controls
             var platformClassName = assemblyName.Replace("Avalonia.", string.Empty) + "Platform";
             var platformClassFullName = assemblyName + "." + platformClassName;
             var platformClass = assembly.GetType(platformClassFullName);
-            var init = platformClass.GetRuntimeMethod("Initialize", new Type[0]);
+            var init = platformClass.GetRuntimeMethod("Initialize", Type.EmptyTypes);
             init.Invoke(null, null);
         };
 
@@ -210,19 +227,19 @@ namespace Avalonia.Controls
         /// <summary>
         /// Sets the shutdown mode of the application.
         /// </summary>
-        /// <param name="exitMode">The shutdown mode.</param>
+        /// <param name="shutdownMode">The shutdown mode.</param>
         /// <returns></returns>
-        public TAppBuilder SetExitMode(ExitMode exitMode)
+        public TAppBuilder SetShutdownMode(ShutdownMode shutdownMode)
         {
-            Instance.ExitMode = exitMode;
+            Instance.ShutdownMode = shutdownMode;
             return Self;
-        }      
+        }
 
         protected virtual bool CheckSetup => true;
 
         private void SetupAvaloniaModules()
         {
-            var moduleInitializers = from assembly in AvaloniaLocator.Current.GetService<IRuntimePlatform>().GetLoadedAssemblies()
+            var moduleInitializers = from assembly in AppDomain.CurrentDomain.GetAssemblies()
                                      from attribute in assembly.GetCustomAttributes<ExportAvaloniaModuleAttribute>()
                                      where attribute.ForWindowingSubsystem == ""
                                       || attribute.ForWindowingSubsystem == WindowingSubsystemName
@@ -236,10 +253,28 @@ namespace Avalonia.Controls
                                      select (from constructor in moduleType.GetTypeInfo().DeclaredConstructors
                                              where constructor.GetParameters().Length == 0 && !constructor.IsStatic
                                              select constructor).Single() into constructor
-                                     select (Action)(() => constructor.Invoke(new object[0]));
+                                     select (Action)(() => constructor.Invoke(Array.Empty<object>()));
             Delegate.Combine(moduleInitializers.ToArray()).DynamicInvoke();
         }
 
+        /// <summary>
+        /// Configures platform-specific options
+        /// </summary>
+        public TAppBuilder With<T>(T options)
+        {
+            _optionsInitializers += () => { AvaloniaLocator.CurrentMutable.Bind<T>().ToConstant(options); };
+            return Self;
+        }
+        
+        /// <summary>
+        /// Configures platform-specific options
+        /// </summary>
+        public TAppBuilder With<T>(Func<T> options)
+        {
+            _optionsInitializers += () => { AvaloniaLocator.CurrentMutable.Bind<T>().ToFunc(options); };
+            return Self;
+        }
+        
         /// <summary>
         /// Sets up the platform-speciic services for the <see cref="Application"/>.
         /// </summary>
@@ -271,11 +306,11 @@ namespace Avalonia.Controls
             }
 
             s_setupWasAlreadyCalled = true;
-
-            Instance.RegisterServices();
+            _optionsInitializers?.Invoke();
             RuntimePlatformServicesInitializer();
             WindowingSubsystemInitializer();
             RenderingSubsystemInitializer();
+            Instance.RegisterServices();
             Instance.Initialize();
             AfterSetupCallback(Self);
         }

@@ -1,26 +1,64 @@
+using System;
+using System.ComponentModel;
+using System.Linq;
+using System.Reactive.Linq;
+using Avalonia.Controls.Generators;
+using Avalonia.Controls.Platform;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
+using Avalonia.Input;
+using Avalonia.LogicalTree;
+
 namespace Avalonia.Controls
 {
-    using Input;
-    using Interactivity;
-    using LogicalTree;
-    using Primitives;
-    using System;
-    using System.Reactive.Linq;
-    using System.Linq;
-    public class ContextMenu : SelectingItemsControl
+    /// <summary>
+    /// A control context menu.
+    /// </summary>
+    public class ContextMenu : MenuBase
     {
-        private bool _isOpen;
+        private static readonly ITemplate<IPanel> DefaultPanel =
+            new FuncTemplate<IPanel>(() => new StackPanel { Orientation = Orientation.Vertical });
         private Popup _popup;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ContextMenu"/> class.
+        /// </summary>
+        public ContextMenu()
+            : this(new DefaultMenuInteractionHandler(true))
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ContextMenu"/> class.
+        /// </summary>
+        /// <param name="interactionHandler">The menu interaction handler.</param>
+        public ContextMenu(IMenuInteractionHandler interactionHandler)
+            : base(interactionHandler)
+        {
+        }
 
         /// <summary>
         /// Initializes static members of the <see cref="ContextMenu"/> class.
         /// </summary>
         static ContextMenu()
         {
+            ItemsPanelProperty.OverrideDefaultValue(typeof(ContextMenu), DefaultPanel);
             ContextMenuProperty.Changed.Subscribe(ContextMenuChanged);
-
-            MenuItem.ClickEvent.AddClassHandler<ContextMenu>(x => x.OnContextMenuClick, handledEventsToo: true);
         }
+
+        /// <summary>
+        /// Occurs when the value of the
+        /// <see cref="P:Avalonia.Controls.ContextMenu.IsOpen" />
+        /// property is changing from false to true.
+        /// </summary>
+        public event CancelEventHandler ContextMenuOpening;
+
+        /// <summary>
+        /// Occurs when the value of the
+        /// <see cref="P:Avalonia.Controls.ContextMenu.IsOpen" />
+        /// property is changing from true to false.
+        /// </summary>
+        public event CancelEventHandler ContextMenuClosing;
 
         /// <summary>
         /// Called when the <see cref="Control.ContextMenu"/> property changes on a control.
@@ -42,62 +80,61 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
-        /// Called when a submenu is clicked somewhere in the menu.
+        /// Opens the menu.
         /// </summary>
-        /// <param name="e">The event args.</param>
-        private void OnContextMenuClick(RoutedEventArgs e)
+        public override void Open() => Open(null);
+
+        /// <summary>
+        /// Opens a context menu on the specified control.
+        /// </summary>
+        /// <param name="control">The control.</param>
+        public void Open(Control control)
         {
-            Hide();
-            FocusManager.Instance.Focus(null);
-            e.Handled = true;
+            if (_popup == null)
+            {
+                _popup = new Popup()
+                {
+                    PlacementMode = PlacementMode.Pointer,
+                    PlacementTarget = control,
+                    StaysOpen = false,
+                    ObeyScreenEdges = true
+                };
+
+                _popup.Opened += PopupOpened;
+                _popup.Closed += PopupClosed;
+            }
+
+            ((ISetLogicalParent)_popup).SetParent(control);
+            _popup.Child = this;
+            _popup.IsOpen = true;
+            IsOpen = true;
         }
 
         /// <summary>
         /// Closes the menu.
         /// </summary>
-        public void Hide()
+        public override void Close()
         {
             if (_popup != null && _popup.IsVisible)
             {
-                _popup.Close();
+                _popup.IsOpen = false;
             }
 
             SelectedIndex = -1;
-
-            _isOpen = false;
+            IsOpen = false;
         }
 
-        /// <summary>
-        /// Shows a context menu for the specified control.
-        /// </summary>
-        /// <param name="control">The control.</param>
-        private void Show(Control control)
+        protected override IItemContainerGenerator CreateItemContainerGenerator()
         {
-            if (control != null)
-            {
-                if (_popup == null)
-                {
-                    _popup = new Popup()
-                    {
-                        PlacementMode = PlacementMode.Pointer,
-                        PlacementTarget = control,
-                        StaysOpen = false,
-                        ObeyScreenEdges = true
-                    };
-
-                    _popup.Closed += PopupClosed;
-                }
-
-                ((ISetLogicalParent)_popup).SetParent(control);
-                _popup.Child = control.ContextMenu;
-
-                _popup.Open();
-
-                control.ContextMenu._isOpen = true;
-            }
+            return new MenuItemContainerGenerator(this);
         }
 
-        private static void PopupClosed(object sender, EventArgs e)
+        private void PopupOpened(object sender, EventArgs e)
+        {
+            Focus();
+        }
+
+        private void PopupClosed(object sender, EventArgs e)
         {
             var contextMenu = (sender as Popup)?.Child as ContextMenu;
 
@@ -108,7 +145,7 @@ namespace Avalonia.Controls
                     i.IsSubMenuOpen = false;
                 }
 
-                contextMenu._isOpen = false;
+                contextMenu.IsOpen = false;
                 contextMenu.SelectedIndex = -1;
             }
         }
@@ -118,21 +155,37 @@ namespace Avalonia.Controls
             var control = (Control)sender;
             var contextMenu = control.ContextMenu;
 
+            if (control.ContextMenu.IsOpen)
+            {
+                if (contextMenu.CancelClosing())
+                    return;
+
+                control.ContextMenu.Close();
+                e.Handled = true;
+            }
+
             if (e.MouseButton == MouseButton.Right)
             {
-                if (control.ContextMenu._isOpen)
-                {
-                    control.ContextMenu.Hide();
-                }
+                if (contextMenu.CancelOpening())
+                    return;
 
-                contextMenu.Show(control);
+                contextMenu.Open(control);
                 e.Handled = true;
             }
-            else if (contextMenu._isOpen)
-            {
-                control.ContextMenu.Hide();
-                e.Handled = true;
-            }
+        }
+
+        private bool CancelClosing()
+        {
+            var eventArgs = new CancelEventArgs();
+            ContextMenuClosing?.Invoke(this, eventArgs);
+            return eventArgs.Cancel;
+        }
+
+        private bool CancelOpening()
+        {
+            var eventArgs = new CancelEventArgs();
+            ContextMenuOpening?.Invoke(this, eventArgs);
+            return eventArgs.Cancel;
         }
     }
 }

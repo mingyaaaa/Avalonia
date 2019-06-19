@@ -3,13 +3,13 @@
 
 using System;
 using System.Linq;
+using System.Reactive.Disposables;
 using System.Runtime.CompilerServices;
 using Avalonia.Collections;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
-using Avalonia.Styling;
 
 namespace Avalonia.Controls.Mixins
 {
@@ -19,8 +19,8 @@ namespace Avalonia.Controls.Mixins
     /// <para>
     /// The <see cref="ContentControlMixin"/> adds behavior to a control which acts as a content
     /// control such as <see cref="ContentControl"/> and <see cref="HeaderedItemsControl"/>. It
-    /// updates keeps the control's logical children in sync with the content being displayed by
-    /// the control.
+    /// keeps the control's logical children in sync with the content being displayed by the
+    /// control.
     /// </para>
     public class ContentControlMixin
     {
@@ -49,31 +49,54 @@ namespace Avalonia.Controls.Mixins
             Contract.Requires<ArgumentNullException>(content != null);
             Contract.Requires<ArgumentNullException>(logicalChildrenSelector != null);
 
+            void ChildChanging(object s, AvaloniaPropertyChangedEventArgs e)
+            {
+                if (s is IControl sender && sender?.TemplatedParent is TControl parent)
+                {
+                    UpdateLogicalChild(
+                        sender,
+                        logicalChildrenSelector(parent),
+                        e.OldValue,
+                        null);
+                }
+            }
+
             void TemplateApplied(object s, RoutedEventArgs ev)
             {
                 if (s is TControl sender)
                 {
                     var e = (TemplateAppliedEventArgs)ev;
-                    var presenter = (IControl)e.NameScope.Find(presenterName);
+                    var presenter = e.NameScope.Find(presenterName) as IContentPresenter;
 
                     if (presenter != null)
                     {
                         presenter.ApplyTemplate();
 
                         var logicalChildren = logicalChildrenSelector(sender);
-                        var subscription = presenter
+                        var subscription = new CompositeDisposable();
+
+                        presenter.ChildChanging += ChildChanging;
+                        subscription.Add(Disposable.Create(() => presenter.ChildChanging -= ChildChanging));
+
+                        subscription.Add(presenter
                             .GetPropertyChangedObservable(ContentPresenter.ChildProperty)
                             .Subscribe(c => UpdateLogicalChild(
                                 sender,
                                 logicalChildren,
-                                c.OldValue,
-                                c.NewValue));
+                                null,
+                                c.NewValue)));
 
                         UpdateLogicalChild(
                             sender,
                             logicalChildren,
                             null,
                             presenter.GetValue(ContentPresenter.ChildProperty));
+
+                        if (subscriptions.Value.TryGetValue(sender, out IDisposable previousSubscription))
+                        {
+                            subscription = new CompositeDisposable(previousSubscription, subscription);
+                            subscriptions.Value.Remove(sender);
+                        }
 
                         subscriptions.Value.Add(sender, subscription);
                     }

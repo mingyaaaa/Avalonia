@@ -288,6 +288,13 @@ namespace Avalonia.Controls
         }
 
         /// <inheritdoc />
+        protected override void OnLostFocus(RoutedEventArgs e)
+        {
+            CommitInput();
+            base.OnLostFocus(e);
+        }
+
+        /// <inheritdoc />
         protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
         {
             if (TextBox != null)
@@ -487,7 +494,7 @@ namespace Avalonia.Controls
         {
             if (e == null)
             {
-                throw new ArgumentNullException("e");
+                throw new ArgumentNullException(nameof(e));
             }
 
             var handler = Spinned;
@@ -526,7 +533,7 @@ namespace Avalonia.Controls
                 return result;
             }
 
-            // Since the conversion from Value to text using a FormartString may not be parsable,
+            // Since the conversion from Value to text using a FormatString may not be parsable,
             // we verify that the already existing text is not the exact same value.
             var currentValueText = ConvertValueToText();
             if (Equals(currentValueText, text))
@@ -571,7 +578,7 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
-        /// Called by OnSpin when the spin direction is SpinDirection.Descrease.
+        /// Called by OnSpin when the spin direction is SpinDirection.Decrease.
         /// </summary>
         private void OnDecrement()
         {
@@ -812,7 +819,7 @@ namespace Avalonia.Controls
         /// <summary>
         /// Raised when the <see cref="Value"/> changes.
         /// </summary>
-        public event EventHandler<SpinEventArgs> ValueChanged
+        public event EventHandler<NumericUpDownValueChangedEventArgs> ValueChanged
         {
             add { AddHandler(ValueChangedEvent, value); }
             remove { RemoveHandler(ValueChangedEvent, value); }
@@ -890,7 +897,7 @@ namespace Avalonia.Controls
                 if (_isTextChangedFromUI && !parsedTextIsValid)
                 {
                     // Text input was made from the user and the text
-                    // repesents an invalid value. Disable the spinner in this case.
+                    // represents an invalid value. Disable the spinner in this case.
                     if (Spinner != null)
                     {
                         Spinner.ValidSpinDirection = ValidSpinDirections.None;
@@ -958,11 +965,11 @@ namespace Avalonia.Controls
         {
             if (value < Minimum)
             {
-                throw new ArgumentOutOfRangeException(nameof(Minimum), string.Format("Value must be greater than Minimum value of {0}", Minimum));
+                throw new ArgumentOutOfRangeException(nameof(value), string.Format("Value must be greater than Minimum value of {0}", Minimum));
             }
             else if (value > Maximum)
             {
-                throw new ArgumentOutOfRangeException(nameof(Maximum), string.Format("Value must be less than Maximum value of {0}", Maximum));
+                throw new ArgumentOutOfRangeException(nameof(value), string.Format("Value must be less than Maximum value of {0}", Maximum));
             }
         }
 

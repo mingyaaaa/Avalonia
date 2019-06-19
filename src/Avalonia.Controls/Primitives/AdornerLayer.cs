@@ -4,15 +4,16 @@
 using System;
 using System.Collections.Specialized;
 using System.Linq;
-using Avalonia.VisualTree;
 using Avalonia.Media;
+using Avalonia.Rendering;
+using Avalonia.VisualTree;
 
 namespace Avalonia.Controls.Primitives
 {
     // TODO: Need to track position of adorned elements and move the adorner if they move.
-    public class AdornerLayer : Panel
+    public class AdornerLayer : Canvas, ICustomSimpleHitTest
     {
-        public static AttachedProperty<Visual> AdornedElementProperty =
+        public static readonly AttachedProperty<Visual> AdornedElementProperty =
             AvaloniaProperty.RegisterAttached<AdornerLayer, Visual, Visual>("AdornedElement");
 
         private static readonly AttachedProperty<AdornedElementInfo> s_adornedElementInfoProperty =
@@ -63,7 +64,7 @@ namespace Avalonia.Controls.Primitives
                 }
                 else
                 {
-                    child.Arrange(new Rect(child.DesiredSize));
+                    child.Arrange(new Rect(finalSize));
                 }
             }
 
@@ -88,7 +89,7 @@ namespace Avalonia.Controls.Primitives
                 control.Clip = clip;
             }
 
-            clip.Rect = bounds.Clip.TransformToAABB(-bounds.Transform);
+            clip.Rect = bounds.Bounds;
         }
 
         private void ChildrenCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
@@ -135,6 +136,11 @@ namespace Avalonia.Controls.Primitives
                     InvalidateArrange();
                 });
             }
+        }
+
+        public bool HitTest(Point point)
+        {
+            return Children.Any(ctrl => ctrl.TransformedBounds?.Contains(point) == true);
         }
 
         private class AdornedElementInfo

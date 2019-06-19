@@ -1,6 +1,7 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
+using System;
 using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -13,10 +14,10 @@ using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Styling;
 using Avalonia.UnitTests;
-using Portable.Xaml;
 using System.Collections;
 using System.ComponentModel;
 using System.Linq;
+using System.Xml;
 using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Xaml
@@ -43,32 +44,6 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.NotNull(target);
             Assert.Equal("Foo", target.Content);
-        }
-
-        [Fact]
-        public void AvaloniaProperty_Without_Getter_And_Setter_Is_Set()
-        {
-            var xaml =
- @"<local:NonControl xmlns='https://github.com/avaloniaui' 
-    xmlns:local='clr-namespace:Avalonia.Markup.Xaml.UnitTests.Xaml;assembly=Avalonia.Markup.Xaml.UnitTests'
-    Foo='55' />";
-
-            var target = AvaloniaXamlLoader.Parse<NonControl>(xaml);
-
-            Assert.Equal(55, target.GetValue(NonControl.FooProperty));
-        }
-
-        [Fact]
-        public void AvaloniaProperty_With_Getter_And_No_Setter_Is_Set()
-        {
-            var xaml =
-@"<local:NonControl xmlns='https://github.com/avaloniaui' 
-    xmlns:local='clr-namespace:Avalonia.Markup.Xaml.UnitTests.Xaml;assembly=Avalonia.Markup.Xaml.UnitTests'
-    Bar='bar' />";
-
-            var target = AvaloniaXamlLoader.Parse<NonControl>(xaml);
-
-            Assert.Equal("bar", target.Bar);
         }
 
         [Fact]
@@ -142,23 +117,14 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.Equal("Foo", ToolTip.GetTip(target));
         }
-
+        
         [Fact]
         public void NonExistent_Property_Throws()
         {
             var xaml =
         @"<ContentControl xmlns='https://github.com/avaloniaui' DoesntExist='foo'/>";
 
-            Assert.Throws<XamlObjectWriterException>(() => AvaloniaXamlLoader.Parse<ContentControl>(xaml));
-        }
-
-        [Fact]
-        public void Non_Attached_Property_With_Attached_Property_Syntax_Throws()
-        {
-            var xaml =
-        @"<ContentControl xmlns='https://github.com/avaloniaui' TextBlock.Text='foo'/>";
-
-            Assert.Throws<XamlObjectWriterException>(() => AvaloniaXamlLoader.Parse<ContentControl>(xaml));
+            XamlTestHelpers.AssertThrowsXamlException(() => AvaloniaXamlLoader.Parse<ContentControl>(xaml));
         }
 
         [Fact]
@@ -518,7 +484,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
             var xaml = @"
 <Style xmlns='https://github.com/avaloniaui'
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-        xmlns:sys='clr-namespace:System;assembly=mscorlib'>
+        xmlns:sys='clr-namespace:System;assembly=netstandard'>
     <Style.Resources>
         <SolidColorBrush x:Key='Brush'>White</SolidColorBrush>
         <sys:Double x:Key='Double'>10</sys:Double>
@@ -579,28 +545,6 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 Assert.Null(target.Content);
 
                 target.DataContext = "Foo";
-
-                Assert.Equal("Foo", target.Content);
-            }
-        }
-
-        [Fact]
-        public void Xaml_Binding_Is_Delayed()
-        {
-            using (UnitTestApplication.Start(TestServices.MockWindowingPlatform))
-            {
-                var xaml =
-@"<ContentControl xmlns='https://github.com/avaloniaui' Content='{Binding}'/>";
-
-                var target = AvaloniaXamlLoader.Parse<ContentControl>(xaml);
-
-                Assert.Null(target.Content);
-
-                target.DataContext = "Foo";
-
-                Assert.Null(target.Content);
-
-                DelayedBinding.ApplyBindings(target);
 
                 Assert.Equal("Foo", target.Content);
             }
@@ -921,6 +865,45 @@ do we need it?")]
                 var textBlock = (TextBlock)window.Content;
 
                 Assert.Equal("Hello World!", textBlock.Text);
+            }
+        }
+
+        [Fact]
+        public void Design_Mode_Properties_Should_Be_Ignored_At_Runtime_And_Set_In_Design_Mode()
+        {
+            using (UnitTestApplication.Start(TestServices.MockWindowingPlatform))
+            {
+                var xaml = @"
+<Window xmlns='https://github.com/avaloniaui' 
+    xmlns:d='http://schemas.microsoft.com/expression/blend/2008'
+    xmlns:mc='http://schemas.openxmlformats.org/markup-compatibility/2006'
+    mc:Ignorable='d'
+    d:DataContext='data-context'
+    d:DesignWidth='123'
+    d:DesignHeight='321'
+>
+
+</Window>";
+                foreach (var designMode in new[] {true, false})
+                {
+                    var loader = new AvaloniaXamlLoader {IsDesignMode = designMode};
+                    var obj = (Window)loader.Load(xaml);
+                    var context = Design.GetDataContext(obj);
+                    var width = Design.GetWidth(obj);
+                    var height = Design.GetHeight(obj);
+                    if (designMode)
+                    {
+                        Assert.Equal("data-context", context);
+                        Assert.Equal(123, width);
+                        Assert.Equal(321, height);
+                    }
+                    else
+                    {
+                        Assert.False(obj.IsSet(Design.DataContextProperty));
+                        Assert.False(obj.IsSet(Design.WidthProperty));
+                        Assert.False(obj.IsSet(Design.HeightProperty));
+                    }
+                }
             }
         }
 

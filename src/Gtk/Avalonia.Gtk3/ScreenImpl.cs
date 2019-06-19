@@ -1,8 +1,7 @@
 ﻿using System;
-using Avalonia.Controls;
+using System.Collections.Generic;
 using Avalonia.Gtk3.Interop;
 using Avalonia.Platform;
-using Avalonia.Utilities;
 
 namespace Avalonia.Gtk3
 {
@@ -10,11 +9,11 @@ namespace Avalonia.Gtk3
     {
         public int ScreenCount
         {
-            get => AllScreens.Length;
+            get => _allScreens.Length;
         }
         
         private Screen[] _allScreens;
-        public Screen[] AllScreens
+        public IReadOnlyList<Screen> AllScreens
         {
             get
             {
@@ -29,8 +28,8 @@ namespace Avalonia.Gtk3
                         GdkRectangle workArea = new GdkRectangle(), geometry = new GdkRectangle();
                         Native.GdkScreenGetMonitorGeometry(screen, i, ref geometry);
                         Native.GdkScreenGetMonitorWorkarea(screen, i, ref workArea);
-                        Rect workAreaRect = new Rect(workArea.X, workArea.Y, workArea.Width, workArea.Height);
-                        Rect geometryRect = new Rect(geometry.X, geometry.Y, geometry.Width, geometry.Height);
+                        PixelRect workAreaRect = new PixelRect(workArea.X, workArea.Y, workArea.Width, workArea.Height);
+                        PixelRect geometryRect = new PixelRect(geometry.X, geometry.Y, geometry.Width, geometry.Height);
                         GtkScreen s = new GtkScreen(geometryRect, workAreaRect, i == primary, i);
                         screens[i] = s;
                     }

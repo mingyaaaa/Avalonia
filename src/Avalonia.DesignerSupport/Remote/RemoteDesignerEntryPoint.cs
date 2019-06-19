@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net;
 using System.Reflection;
+using System.Xml;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
-using Avalonia.DesignerSupport;
 using Avalonia.Input;
 using Avalonia.Remote.Protocol;
 using Avalonia.Remote.Protocol.Designer;
@@ -18,6 +16,8 @@ namespace Avalonia.DesignerSupport.Remote
     {
         private static ClientSupportedPixelFormatsMessage s_supportedPixelFormats;
         private static ClientViewportAllocatedMessage s_viewportAllocatedMessage;
+        private static ClientRenderInfoMessage s_renderInfoMessage;
+
         private static IAvaloniaRemoteTransportConnection s_transport;
         class CommandLineArgs
         {
@@ -164,7 +164,8 @@ namespace Avalonia.DesignerSupport.Remote
             PreviewerWindowingPlatform.PreFlightMessages = new List<object>
             {
                 s_supportedPixelFormats,
-                s_viewportAllocatedMessage
+                s_viewportAllocatedMessage,
+                s_renderInfoMessage
             };
         }
 
@@ -174,6 +175,11 @@ namespace Avalonia.DesignerSupport.Remote
             if (obj is ClientSupportedPixelFormatsMessage formats)
             {
                 s_supportedPixelFormats = formats;
+                RebuildPreFlight();
+            }
+            if (obj is ClientRenderInfoMessage renderInfo)
+            {
+                s_renderInfoMessage = renderInfo;
                 RebuildPreFlight();
             }
             if (obj is ClientViewportAllocatedMessage viewport)
@@ -194,14 +200,23 @@ namespace Avalonia.DesignerSupport.Remote
                 s_currentWindow = null;
                 try
                 {
-                    s_currentWindow = DesignWindowLoader.LoadDesignerWindow(xaml.Xaml, xaml.AssemblyPath);
+                    s_currentWindow = DesignWindowLoader.LoadDesignerWindow(xaml.Xaml, xaml.AssemblyPath, xaml.XamlFileProjectPath);
                     s_transport.Send(new UpdateXamlResultMessage(){Handle = s_currentWindow.PlatformImpl?.Handle?.Handle.ToString()});
                 }
                 catch (Exception e)
                 {
+                    var xmlException = e as XmlException;
+                    
                     s_transport.Send(new UpdateXamlResultMessage
                     {
-                        Error = e.ToString()
+                        Error = e.ToString(),
+                        Exception = new ExceptionDetails
+                        {
+                            ExceptionType = e.GetType().FullName,
+                            Message = e.Message.ToString(),
+                            LineNumber = xmlException?.LineNumber,
+                            LinePosition = xmlException?.LinePosition,
+                        }
                     });
                 }
             }

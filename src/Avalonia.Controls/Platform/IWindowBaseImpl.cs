@@ -6,7 +6,7 @@ namespace Avalonia.Platform
     public interface IWindowBaseImpl : ITopLevelImpl
     {
         /// <summary>
-        /// Shows the toplevel.
+        /// Shows the top level.
         /// </summary>
         void Show();
 
@@ -27,14 +27,14 @@ namespace Avalonia.Platform
         void BeginResizeDrag(WindowEdge edge);
 
         /// <summary>
-        /// Gets position of the window relatively to the screen
+        /// Gets the position of the window in device pixels.
         /// </summary>
-        Point Position { get; set; }
+        PixelPoint Position { get; set; }
         
         /// <summary>
         /// Gets or sets a method called when the window's position changes.
         /// </summary>
-        Action<Point> PositionChanged { get; set; }
+        Action<PixelPoint> PositionChanged { get; set; }
 
         /// <summary>
         /// Activates the window.
@@ -62,7 +62,7 @@ namespace Avalonia.Platform
         Size MaxClientSize { get; }
 
         /// <summary>
-        /// Sets the client size of the toplevel.
+        /// Sets the client size of the top level.
         /// </summary>
         void Resize(Size clientSize);
 

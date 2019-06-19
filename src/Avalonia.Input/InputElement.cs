@@ -4,8 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia.Input.GestureRecognizers;
 using Avalonia.Interactivity;
-using Avalonia.Rendering;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Input
@@ -128,6 +128,14 @@ namespace Avalonia.Input
             RoutedEvent.Register<InputElement, PointerReleasedEventArgs>(
                 "PointerReleased",
                 RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
+        
+        /// <summary>
+        /// Defines the <see cref="PointerCaptureLost"/> routed event.
+        /// </summary>
+        public static readonly RoutedEvent<PointerCaptureLostEventArgs> PointerCaptureLostEvent =
+            RoutedEvent.Register<InputElement, PointerCaptureLostEventArgs>(
+                "PointerCaptureLost", 
+                RoutingStrategies.Direct);
 
         /// <summary>
         /// Defines the <see cref="PointerWheelChanged"/> event.
@@ -149,6 +157,7 @@ namespace Avalonia.Input
 
         private bool _isFocused;
         private bool _isPointerOver;
+        private GestureRecognizerCollection _gestureRecognizers;
 
         /// <summary>
         /// Initializes static members of the <see cref="InputElement"/> class.
@@ -162,22 +171,23 @@ namespace Avalonia.Input
             KeyDownEvent.AddClassHandler<InputElement>(x => x.OnKeyDown);
             KeyUpEvent.AddClassHandler<InputElement>(x => x.OnKeyUp);
             TextInputEvent.AddClassHandler<InputElement>(x => x.OnTextInput);
-            PointerEnterEvent.AddClassHandler<InputElement>(x => x.OnPointerEnter);
-            PointerLeaveEvent.AddClassHandler<InputElement>(x => x.OnPointerLeave);
+            PointerEnterEvent.AddClassHandler<InputElement>(x => x.OnPointerEnterCore);
+            PointerLeaveEvent.AddClassHandler<InputElement>(x => x.OnPointerLeaveCore);
             PointerMovedEvent.AddClassHandler<InputElement>(x => x.OnPointerMoved);
             PointerPressedEvent.AddClassHandler<InputElement>(x => x.OnPointerPressed);
             PointerReleasedEvent.AddClassHandler<InputElement>(x => x.OnPointerReleased);
+            PointerCaptureLostEvent.AddClassHandler<InputElement>(x => x.OnPointerCaptureLost);
             PointerWheelChangedEvent.AddClassHandler<InputElement>(x => x.OnPointerWheelChanged);
 
-            PseudoClass(IsEnabledCoreProperty, x => !x, ":disabled");
-            PseudoClass(IsFocusedProperty, ":focus");
-            PseudoClass(IsPointerOverProperty, ":pointerover");
+            PseudoClass<InputElement, bool>(IsEnabledCoreProperty, x => !x, ":disabled");
+            PseudoClass<InputElement>(IsFocusedProperty, ":focus");
+            PseudoClass<InputElement>(IsPointerOverProperty, ":pointerover");
         }
 
         /// <summary>
         /// Occurs when the control receives focus.
         /// </summary>
-        public event EventHandler<RoutedEventArgs> GotFocus
+        public event EventHandler<GotFocusEventArgs> GotFocus
         {
             add { AddHandler(GotFocusEvent, value); }
             remove { RemoveHandler(GotFocusEvent, value); }
@@ -264,6 +274,16 @@ namespace Avalonia.Input
             remove { RemoveHandler(PointerReleasedEvent, value); }
         }
 
+        /// <summary>
+        /// Occurs when the control or its child control loses the pointer capture for any reason,
+        /// event will not be triggered for a parent control if capture was transferred to another child of that parent control
+        /// </summary>
+        public event EventHandler<PointerCaptureLostEventArgs> PointerCaptureLost
+        {
+            add => AddHandler(PointerCaptureLostEvent, value);
+            remove => RemoveHandler(PointerCaptureLostEvent, value);
+        }
+        
         /// <summary>
         /// Occurs when the mouse wheen is scrolled over the control.
         /// </summary>
@@ -371,12 +391,15 @@ namespace Avalonia.Input
 
         public List<KeyBinding> KeyBindings { get; } = new List<KeyBinding>();
 
+        public GestureRecognizerCollection GestureRecognizers
+            => _gestureRecognizers ?? (_gestureRecognizers = new GestureRecognizerCollection(this));
+
         /// <summary>
         /// Focuses the control.
         /// </summary>
         public void Focus()
         {
-            FocusManager.Instance.Focus(this);
+            FocusManager.Instance?.Focus(this);
         }
 
         /// <inheritdoc/>
@@ -445,7 +468,6 @@ namespace Avalonia.Input
         /// <param name="e">The event args.</param>
         protected virtual void OnPointerEnter(PointerEventArgs e)
         {
-            IsPointerOver = true;
         }
 
         /// <summary>
@@ -454,7 +476,6 @@ namespace Avalonia.Input
         /// <param name="e">The event args.</param>
         protected virtual void OnPointerLeave(PointerEventArgs e)
         {
-            IsPointerOver = false;
         }
 
         /// <summary>
@@ -463,6 +484,8 @@ namespace Avalonia.Input
         /// <param name="e">The event args.</param>
         protected virtual void OnPointerMoved(PointerEventArgs e)
         {
+            if (_gestureRecognizers?.HandlePointerMoved(e) == true)
+                e.Handled = true;
         }
 
         /// <summary>
@@ -471,6 +494,8 @@ namespace Avalonia.Input
         /// <param name="e">The event args.</param>
         protected virtual void OnPointerPressed(PointerPressedEventArgs e)
         {
+            if (_gestureRecognizers?.HandlePointerPressed(e) == true)
+                e.Handled = true;
         }
 
         /// <summary>
@@ -479,6 +504,17 @@ namespace Avalonia.Input
         /// <param name="e">The event args.</param>
         protected virtual void OnPointerReleased(PointerReleasedEventArgs e)
         {
+            if (_gestureRecognizers?.HandlePointerReleased(e) == true)
+                e.Handled = true;
+        }
+
+        /// <summary>
+        /// Called before the <see cref="PointerCaptureLost"/> event occurs.
+        /// </summary>
+        /// <param name="e">The event args.</param>
+        protected virtual void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            _gestureRecognizers?.HandlePointerCaptureLost(e);
         }
 
         /// <summary>
@@ -492,6 +528,26 @@ namespace Avalonia.Input
         private static void IsEnabledChanged(AvaloniaPropertyChangedEventArgs e)
         {
             ((InputElement)e.Sender).UpdateIsEnabledCore();
+        }
+
+        /// <summary>
+        /// Called before the <see cref="PointerEnter"/> event occurs.
+        /// </summary>
+        /// <param name="e">The event args.</param>
+        private void OnPointerEnterCore(PointerEventArgs e)
+        {
+            IsPointerOver = true;
+            OnPointerEnter(e);
+        }
+
+        /// <summary>
+        /// Called before the <see cref="PointerLeave"/> event occurs.
+        /// </summary>
+        /// <param name="e">The event args.</param>
+        private void OnPointerLeaveCore(PointerEventArgs e)
+        {
+            IsPointerOver = false;
+            OnPointerLeave(e);
         }
 
         /// <summary>

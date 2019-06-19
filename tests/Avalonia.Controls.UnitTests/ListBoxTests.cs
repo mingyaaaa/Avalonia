@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 using System.Linq;
+using Avalonia.Collections;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
@@ -10,12 +11,13 @@ using Avalonia.Styling;
 using Avalonia.UnitTests;
 using Avalonia.VisualTree;
 using Xunit;
-using Avalonia.Collections;
 
 namespace Avalonia.Controls.UnitTests
 {
     public class ListBoxTests
     {
+        private MouseTestHelper _mouse = new MouseTestHelper();
+        
         [Fact]
         public void Should_Use_ItemTemplate_To_Create_Item_Content()
         {
@@ -170,9 +172,169 @@ namespace Avalonia.Controls.UnitTests
             Assert.Equal(new Size(100, 10), target.Scroll.Viewport);
         }
 
+        [Fact]
+        public void Containers_Correct_After_Clear_Add_Remove()
+        {
+            // Issue #1936
+            var items = new AvaloniaList<string>(Enumerable.Range(0, 11).Select(x => $"Item {x}"));
+            var target = new ListBox
+            {
+                Template = ListBoxTemplate(),
+                Items = items,
+                ItemTemplate = new FuncDataTemplate<string>(x => new TextBlock { Width = 20, Height = 10 }),
+                SelectedIndex = 0,
+            };
+
+            Prepare(target);
+
+            items.Clear();
+            items.AddRange(Enumerable.Range(0, 11).Select(x => $"Item {x}"));
+            items.Remove("Item 2");
+
+            Assert.Equal(
+                items,
+                target.Presenter.Panel.Children.Cast<ListBoxItem>().Select(x => (string)x.Content));
+        }
+
+        [Fact]
+        public void Toggle_Selection_Should_Update_Containers()
+        {
+            var items = Enumerable.Range(0, 10).Select(x => $"Item {x}").ToArray();
+            var target = new ListBox
+            {
+                Template = ListBoxTemplate(),
+                Items = items,
+                SelectionMode = SelectionMode.Toggle,
+                ItemTemplate = new FuncDataTemplate<string>(x => new TextBlock { Height = 10 })
+            };
+
+            Prepare(target);
+
+            var lbItems = target.GetLogicalChildren().OfType<ListBoxItem>().ToArray();
+
+            var item = lbItems[0];
+
+            Assert.Equal(false, item.IsSelected);
+
+            RaisePressedEvent(target, item, MouseButton.Left);
+
+            Assert.Equal(true, item.IsSelected);
+
+            RaisePressedEvent(target, item, MouseButton.Left);
+
+            Assert.Equal(false, item.IsSelected);
+        }
+
+        private void RaisePressedEvent(ListBox listBox, ListBoxItem item, MouseButton mouseButton)
+        {
+            _mouse.Click(listBox, item, mouseButton);
+        }
+
+        [Fact]
+        public void ListBox_After_Scroll_IndexOutOfRangeException_Shouldnt_Be_Thrown()
+        {
+            var items = Enumerable.Range(0, 11).Select(x => $"{x}").ToArray();
+
+            var target = new ListBox
+            {
+                Template = ListBoxTemplate(),
+                Items = items,
+                ItemTemplate = new FuncDataTemplate<string>(x => new TextBlock { Height = 11 })
+            };
+
+            Prepare(target);
+
+            var panel = target.Presenter.Panel as IVirtualizingPanel;
+
+            var listBoxItems = panel.Children.OfType<ListBoxItem>();
+
+            //virtualization should have created exactly 10 items
+            Assert.Equal(10, listBoxItems.Count());
+            Assert.Equal("0", listBoxItems.First().DataContext);
+            Assert.Equal("9", listBoxItems.Last().DataContext);
+
+            //instead pixeloffset > 0 there could be pretty complex sequence for repro
+            //it involves add/remove/scroll to end multiple actions
+            //which i can't find so far :(, but this is the simplest way to add it to unit test
+            panel.PixelOffset = 1;
+
+            //here scroll to end -> IndexOutOfRangeException is thrown
+            target.Scroll.Offset = new Vector(0, 2);
+
+            Assert.True(true);
+        }
+
+        [Fact]
+        public void LayoutManager_Should_Measure_Arrange_All()
+        {
+            var virtualizationMode = ItemVirtualizationMode.Simple;
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var items = new AvaloniaList<string>(Enumerable.Range(1, 7).Select(v => v.ToString()));
+
+                var wnd = new Window() { SizeToContent = SizeToContent.WidthAndHeight };
+
+                wnd.IsVisible = true;
+
+                var target = new ListBox();
+
+                wnd.Content = target;
+
+                var lm = wnd.LayoutManager;
+
+                target.Height = 110;
+                target.Width = 50;
+                target.DataContext = items;
+                target.VirtualizationMode = virtualizationMode;
+
+                target.ItemTemplate = new FuncDataTemplate<object>(c =>
+                {
+                    var tb = new TextBlock() { Height = 10, Width = 30 };
+                    tb.Bind(TextBlock.TextProperty, new Data.Binding());
+                    return tb;
+                }, true);
+
+                lm.ExecuteInitialLayoutPass(wnd);
+
+                target.Items = items;
+
+                lm.ExecuteLayoutPass();
+
+                items.Insert(3, "3+");
+                lm.ExecuteLayoutPass();
+
+                items.Insert(4, "4+");
+                lm.ExecuteLayoutPass();
+
+                //RESET
+                items.Clear();
+                foreach (var i in Enumerable.Range(1, 7))
+                {
+                    items.Add(i.ToString());
+                }
+
+                //working bit better with this line no outof memory or remaining to arrange/measure ???
+                //lm.ExecuteLayoutPass();
+
+                items.Insert(2, "2+");
+
+                lm.ExecuteLayoutPass();
+                //after few more layout cycles layoutmanager shouldn't hold any more visual for measure/arrange
+                lm.ExecuteLayoutPass();
+                lm.ExecuteLayoutPass();
+
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var toMeasure = lm.GetType().GetField("_toMeasure", flags).GetValue(lm) as System.Collections.Generic.IEnumerable<Layout.ILayoutable>;
+                var toArrange = lm.GetType().GetField("_toArrange", flags).GetValue(lm) as System.Collections.Generic.IEnumerable<Layout.ILayoutable>;
+
+                Assert.Equal(0, toMeasure.Count());
+                Assert.Equal(0, toArrange.Count());
+            }
+        }
+
         private FuncControlTemplate ListBoxTemplate()
         {
-            return new FuncControlTemplate<ListBox>(parent => 
+            return new FuncControlTemplate<ListBox>(parent =>
                 new ScrollViewer
                 {
                     Name = "PART_ScrollViewer",
@@ -189,7 +351,7 @@ namespace Avalonia.Controls.UnitTests
 
         private FuncControlTemplate ListBoxItemTemplate()
         {
-            return new FuncControlTemplate<ListBoxItem>(parent => 
+            return new FuncControlTemplate<ListBoxItem>(parent =>
                 new ContentPresenter
                 {
                     Name = "PART_ContentPresenter",

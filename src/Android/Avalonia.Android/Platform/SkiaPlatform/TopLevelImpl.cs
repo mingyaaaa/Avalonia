@@ -1,18 +1,15 @@
-using Android.App;
+using System;
+using System.Collections.Generic;
 using Android.Content;
 using Android.Graphics;
 using Android.Views;
+using Avalonia.Android.Platform.Input;
 using Avalonia.Android.Platform.Specific;
 using Avalonia.Android.Platform.Specific.Helpers;
+using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
 using Avalonia.Platform;
-using System;
-using System.Collections.Generic;
-using System.Reactive.Disposables;
-using Avalonia.Android.Platform.Input;
-using Avalonia.Controls;
-using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Rendering;
 
 namespace Avalonia.Android.Platform.SkiaPlatform
@@ -102,14 +99,14 @@ namespace Avalonia.Android.Platform.SkiaPlatform
             if (_view.Holder?.Surface?.IsValid == true) _view.Invalidate();
         }
 
-        public Point PointToClient(Point point)
+        public Point PointToClient(PixelPoint point)
         {
-            return point;
+            return point.ToPoint(1);
         }
 
-        public Point PointToScreen(Point point)
+        public PixelPoint PointToScreen(Point point)
         {
-            return point;
+            return PixelPoint.FromPoint(point, 1);
         }
 
         public void SetCursor(IPlatformHandle cursor)

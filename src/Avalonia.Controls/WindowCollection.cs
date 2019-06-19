@@ -96,7 +96,7 @@ namespace Avalonia
         {
             while (_windows.Count > 0)
             {
-                _windows[0].Close();
+                _windows[0].Close(true);
             }
         }
 
@@ -107,24 +107,24 @@ namespace Avalonia
                 return;
             }
 
-            if (_application.IsExiting)
+            if (_application.IsShuttingDown)
             {
                 return;
             }
 
-            switch (_application.ExitMode)
+            switch (_application.ShutdownMode)
             {
-                case ExitMode.OnLastWindowClose:
+                case ShutdownMode.OnLastWindowClose:
                     if (Count == 0)
                     {
-                        _application.Exit();
+                        _application.Shutdown();
                     }
 
                     break;
-                case ExitMode.OnMainWindowClose:
+                case ShutdownMode.OnMainWindowClose:
                     if (window == _application.MainWindow)
                     {
-                        _application.Exit();
+                        _application.Shutdown();
                     }
 
                     break;                   

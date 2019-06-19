@@ -1,7 +1,9 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
+using System;
 using Avalonia.Data;
+using Avalonia.Utilities;
 
 namespace Avalonia
 {
@@ -28,8 +30,17 @@ namespace Avalonia
         void BindingNotificationReceived(AvaloniaProperty property, BindingNotification notification);
 
         /// <summary>
+        /// Logs a binding error.
+        /// </summary>
+        /// <param name="property">The property the error occurred on.</param>
+        /// <param name="e">The binding error.</param>
+        void LogError(AvaloniaProperty property, Exception e);
+
+        /// <summary>
         /// Ensures that the current thread is the UI thread.
         /// </summary>
         void VerifyAccess();
+
+        DeferredSetter<object> Setter { get; }
     }
 }

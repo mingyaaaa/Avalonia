@@ -3,15 +3,14 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
-using Avalonia.Controls.Primitives;
-using Avalonia.Data;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Media;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 
 namespace Avalonia.Controls
 {
@@ -955,7 +954,7 @@ namespace Avalonia.Controls
                 }
                 else
                 {
-                    var dateValidationError = new DatePickerDateValidationErrorEventArgs(new ArgumentOutOfRangeException("text", "SelectedDate value is not valid."), text);
+                    var dateValidationError = new DatePickerDateValidationErrorEventArgs(new ArgumentOutOfRangeException(nameof(text), "SelectedDate value is not valid."), text);
                     OnDateValidationError(dateValidationError);
 
                     if (dateValidationError.ThrowException)
@@ -1083,7 +1082,7 @@ namespace Avalonia.Controls
                 else
                 {
                     // If parse error: TextBox should have the latest valid
-                    // selecteddate value:
+                    // SelectedDate value:
                     if (SelectedDate != null)
                     {
                         string newtext = this.DateTimeToString(SelectedDate.Value);

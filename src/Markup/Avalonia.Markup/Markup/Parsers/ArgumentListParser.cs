@@ -1,16 +1,15 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Data.Core;
-using System;
 using System.Collections.Generic;
-using System.Text;
+using Avalonia.Data.Core;
+using Avalonia.Utilities;
 
 namespace Avalonia.Markup.Parsers
 {
     internal static class ArgumentListParser
     {
-        public static IList<string> Parse(Reader r, char open, char close)
+        public static IList<string> ParseArguments(this ref CharacterReader r, char open, char close, char delimiter = ',')
         {
             if (r.Peek == open)
             {
@@ -20,22 +19,19 @@ namespace Avalonia.Markup.Parsers
 
                 while (!r.End)
                 {
-                    var builder = new StringBuilder();
-                    while (!r.End && r.Peek != ',' && r.Peek != close && !char.IsWhiteSpace(r.Peek))
-                    {
-                        builder.Append(r.Take());
-                    }
-                    if (builder.Length == 0)
+                    var argument = r.TakeWhile(c => c != delimiter && c != close && !char.IsWhiteSpace(c));
+                    if (argument.IsEmpty)
                     {
                         throw new ExpressionParseException(r.Position, "Expected indexer argument.");
                     }
-                    result.Add(builder.ToString());
+
+                    result.Add(argument.ToString());
 
                     r.SkipWhitespace();
 
                     if (r.End)
                     {
-                        throw new ExpressionParseException(r.Position, "Expected ','.");
+                        throw new ExpressionParseException(r.Position, $"Expected '{delimiter}'.");
                     }
                     else if (r.TakeIf(close))
                     {
@@ -43,9 +39,9 @@ namespace Avalonia.Markup.Parsers
                     }
                     else
                     {
-                        if (r.Take() != ',')
+                        if (r.Take() != delimiter)
                         {
-                            throw new ExpressionParseException(r.Position, "Expected ','.");
+                            throw new ExpressionParseException(r.Position, $"Expected '{delimiter}'.");
                         }
 
                         r.SkipWhitespace();

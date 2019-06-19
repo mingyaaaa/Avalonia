@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Avalonia.Data;
 
 namespace Avalonia
 {
@@ -13,6 +14,8 @@ namespace Avalonia
     /// </summary>
     public class AvaloniaPropertyRegistry
     {
+        private readonly Dictionary<int, AvaloniaProperty> _properties =
+            new Dictionary<int, AvaloniaProperty>();
         private readonly Dictionary<Type, Dictionary<int, AvaloniaProperty>> _registered =
             new Dictionary<Type, Dictionary<int, AvaloniaProperty>>();
         private readonly Dictionary<Type, Dictionary<int, AvaloniaProperty>> _attached =
@@ -21,12 +24,19 @@ namespace Avalonia
             new Dictionary<Type, List<AvaloniaProperty>>();
         private readonly Dictionary<Type, List<AvaloniaProperty>> _attachedCache =
             new Dictionary<Type, List<AvaloniaProperty>>();
+        private readonly Dictionary<Type, List<KeyValuePair<AvaloniaProperty, object>>> _initializedCache =
+            new Dictionary<Type, List<KeyValuePair<AvaloniaProperty, object>>>();
 
         /// <summary>
         /// Gets the <see cref="AvaloniaPropertyRegistry"/> instance
         /// </summary>
         public static AvaloniaPropertyRegistry Instance { get; }
             = new AvaloniaPropertyRegistry();
+
+        /// <summary>
+        /// Gets a list of all registered properties.
+        /// </summary>
+        internal IReadOnlyCollection<AvaloniaProperty> Properties => _properties.Values;
 
         /// <summary>
         /// Gets all non-attached <see cref="AvaloniaProperty"/>s registered on a type.
@@ -106,7 +116,7 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Finds a registered non-attached property on a type by name.
+        /// Finds a registered property on a type by name.
         /// </summary>
         /// <param name="type">The type.</param>
         /// <param name="name">The property name.</param>
@@ -130,7 +140,7 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Finds a registered non-attached property on a type by name.
+        /// Finds a registered property on an object by name.
         /// </summary>
         /// <param name="o">The object.</param>
         /// <param name="name">The property name.</param>
@@ -149,49 +159,13 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Finds a registered attached property on a type by name.
+        /// Finds a registered property by Id.
         /// </summary>
-        /// <param name="type">The type.</param>
-        /// <param name="ownerType">The owner type.</param>
-        /// <param name="name">The property name.</param>
-        /// <returns>
-        /// The registered property or null if no matching property found.
-        /// </returns>
-        /// <exception cref="InvalidOperationException">
-        /// The property name contains a '.'.
-        /// </exception>
-        public AvaloniaProperty FindRegisteredAttached(Type type, Type ownerType, string name)
+        /// <param name="id">The property Id.</param>
+        /// <returns>The registered property or null if no matching property found.</returns>
+        internal AvaloniaProperty FindRegistered(int id)
         {
-            Contract.Requires<ArgumentNullException>(type != null);
-            Contract.Requires<ArgumentNullException>(ownerType != null);
-            Contract.Requires<ArgumentNullException>(name != null);
-
-            if (name.Contains('.'))
-            {
-                throw new InvalidOperationException("Attached properties not supported.");
-            }
-
-            return GetRegisteredAttached(type).FirstOrDefault(x => x.Name == name);
-        }
-
-        /// <summary>
-        /// Finds a registered non-attached property on a type by name.
-        /// </summary>
-        /// <param name="o">The object.</param>
-        /// <param name="ownerType">The owner type.</param>
-        /// <param name="name">The property name.</param>
-        /// <returns>
-        /// The registered property or null if no matching property found.
-        /// </returns>
-        /// <exception cref="InvalidOperationException">
-        /// The property name contains a '.'.
-        /// </exception>
-        public AvaloniaProperty FindRegisteredAttached(AvaloniaObject o, Type ownerType, string name)
-        {
-            Contract.Requires<ArgumentNullException>(o != null);
-            Contract.Requires<ArgumentNullException>(name != null);
-
-            return FindRegisteredAttached(o.GetType(), ownerType, name);
+            return id < _properties.Count ? _properties[id] : null;
         }
 
         /// <summary>
@@ -248,8 +222,14 @@ namespace Avalonia
             {
                 inner.Add(property.Id, property);
             }
- 
+
+            if (!_properties.ContainsKey(property.Id))
+            {
+                _properties.Add(property.Id, property);
+            }
+            
             _registeredCache.Clear();
+            _initializedCache.Clear();
         }
 
         /// <summary>
@@ -283,8 +263,59 @@ namespace Avalonia
             {
                 inner.Add(property.Id, property);
             }
-
+            
             _attachedCache.Clear();
+            _initializedCache.Clear();
+        }
+
+        internal void NotifyInitialized(AvaloniaObject o)
+        {
+            Contract.Requires<ArgumentNullException>(o != null);
+
+            var type = o.GetType();
+
+            void Notify(AvaloniaProperty property, object value)
+            {
+                var e = new AvaloniaPropertyChangedEventArgs(
+                    o,
+                    property,
+                    AvaloniaProperty.UnsetValue,
+                    value,
+                    BindingPriority.Unset);
+
+                property.NotifyInitialized(e);
+            }
+
+            if (!_initializedCache.TryGetValue(type, out var items))
+            {
+                var build = new Dictionary<AvaloniaProperty, object>();
+
+                foreach (var property in GetRegistered(type))
+                {
+                    var value = !property.IsDirect ?
+                        ((IStyledPropertyAccessor)property).GetDefaultValue(type) :
+                        null;
+                    build.Add(property, value);
+                }
+
+                foreach (var property in GetRegisteredAttached(type))
+                {
+                    if (!build.ContainsKey(property))
+                    {
+                        var value = ((IStyledPropertyAccessor)property).GetDefaultValue(type);
+                        build.Add(property, value);
+                    }
+                }
+
+                items = build.ToList();
+                _initializedCache.Add(type, items);
+            }
+
+            foreach (var i in items)
+            {
+                var value = i.Key.IsDirect ? o.GetValue(i.Key) : i.Value;
+                Notify(i.Key, value);
+            }
         }
     }
 }

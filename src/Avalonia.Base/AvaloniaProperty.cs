@@ -19,9 +19,9 @@ namespace Avalonia
         /// <summary>
         /// Represents an unset property value.
         /// </summary>
-        public static readonly object UnsetValue = new Unset();
+        public static readonly object UnsetValue = new UnsetValueType();
 
-        private static int s_nextId = 1;
+        private static int s_nextId;
         private readonly Subject<AvaloniaPropertyChangedEventArgs> _initialized;
         private readonly Subject<AvaloniaPropertyChangedEventArgs> _changed;
         private readonly PropertyMetadata _defaultMetadata;
@@ -231,7 +231,7 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Tests two <see cref="AvaloniaProperty"/>s for unequality.
+        /// Tests two <see cref="AvaloniaProperty"/>s for inequality.
         /// </summary>
         /// <param name="a">The first property.</param>
         /// <param name="b">The second property.</param>
@@ -546,16 +546,17 @@ namespace Avalonia
             }
         }
 
+        
+    }
+    /// <summary>
+    /// Class representing the <see cref="AvaloniaProperty.UnsetValue"/>.
+    /// </summary>
+    public class UnsetValueType
+    {
         /// <summary>
-        /// Class representing the <see cref="UnsetValue"/>.
+        /// Returns the string representation of the <see cref="AvaloniaProperty.UnsetValue"/>.
         /// </summary>
-        private class Unset
-        {
-            /// <summary>
-            /// Returns the string representation of the <see cref="UnsetValue"/>.
-            /// </summary>
-            /// <returns>The string "(unset)".</returns>
-            public override string ToString() => "(unset)";
-        }
+        /// <returns>The string "(unset)".</returns>
+        public override string ToString() => "(unset)";
     }
 }

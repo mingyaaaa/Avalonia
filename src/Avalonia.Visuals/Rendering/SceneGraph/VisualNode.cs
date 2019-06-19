@@ -17,8 +17,8 @@ namespace Avalonia.Rendering.SceneGraph
     /// </summary>
     internal class VisualNode : IVisualNode
     {
-        private static readonly IReadOnlyList<IVisualNode> EmptyChildren = new IVisualNode[0];
-        private static readonly IReadOnlyList<IRef<IDrawOperation>> EmptyDrawOperations = new IRef<IDrawOperation>[0];
+        private static readonly IReadOnlyList<IVisualNode> EmptyChildren = Array.Empty<IVisualNode>();
+        private static readonly IReadOnlyList<IRef<IDrawOperation>> EmptyDrawOperations = Array.Empty<IRef<IDrawOperation>>();
 
         private Rect? _bounds;
         private double _opacity;
@@ -59,6 +59,9 @@ namespace Avalonia.Rendering.SceneGraph
         public Rect ClipBounds { get; set; }
 
         /// <inheritdoc/>
+        public Rect LayoutBounds { get; set; }
+
+        /// <inheritdoc/>
         public bool ClipToBounds { get; set; }
 
         /// <inheritdoc/>
@@ -82,7 +85,7 @@ namespace Avalonia.Rendering.SceneGraph
         }
 
         /// <summary>
-        /// Gets or sets the opacity mask for the scnee graph node.
+        /// Gets or sets the opacity mask for the scene graph node.
         /// </summary>
         public IBrush OpacityMask { get; set; }
 
@@ -159,7 +162,7 @@ namespace Avalonia.Rendering.SceneGraph
         /// <summary>
         /// Replaces an item in the <see cref="DrawOperations"/> collection.
         /// </summary>
-        /// <param name="index">The opeation to be replaced.</param>
+        /// <param name="index">The operation to be replaced.</param>
         /// <param name="operation">The operation to add.</param>
         public void ReplaceDrawOperation(int index, IRef<IDrawOperation> operation)
         {
@@ -217,6 +220,7 @@ namespace Avalonia.Rendering.SceneGraph
                 Transform = Transform,
                 ClipBounds = ClipBounds,
                 ClipToBounds = ClipToBounds,
+                LayoutBounds = LayoutBounds,
                 GeometryClip = GeometryClip,
                 _opacity = Opacity,
                 OpacityMask = OpacityMask,
@@ -232,7 +236,7 @@ namespace Avalonia.Rendering.SceneGraph
         {
             foreach (var operation in DrawOperations)
             {
-                if (operation.Item.HitTest(p) == true)
+                if (operation.Item.HitTest(p))
                 {
                     return true;
                 }
@@ -266,7 +270,7 @@ namespace Avalonia.Rendering.SceneGraph
 
             if (OpacityMask != null)
             {
-                context.PushOpacityMask(OpacityMask, ClipBounds);
+                context.PushOpacityMask(OpacityMask, LayoutBounds);
             }
         }
 
@@ -318,36 +322,51 @@ namespace Avalonia.Rendering.SceneGraph
             }
         }
 
+        /// <summary>
+        /// Ensures that this node draw operations have been created and are mutable (in case we are using cloned operations).
+        /// </summary>
         private void EnsureDrawOperationsCreated()
         {
             if (_drawOperations == null)
             {
                 _drawOperations = new List<IRef<IDrawOperation>>();
-                _drawOperationsRefCounter = RefCountable.Create(Disposable.Create(DisposeDrawOperations));
+                _drawOperationsRefCounter = RefCountable.Create(CreateDisposeDrawOperations(_drawOperations));
                 _drawOperationsCloned = false;
             }
             else if (_drawOperationsCloned)
             {
                 _drawOperations = new List<IRef<IDrawOperation>>(_drawOperations.Select(op => op.Clone()));
                 _drawOperationsRefCounter.Dispose();
-                _drawOperationsRefCounter = RefCountable.Create(Disposable.Create(DisposeDrawOperations));
+                _drawOperationsRefCounter = RefCountable.Create(CreateDisposeDrawOperations(_drawOperations));
                 _drawOperationsCloned = false;
             }
         }
 
-        public bool Disposed { get; }
-        
+        /// <summary>
+        /// Creates disposable that will dispose all items in passed draw operations after being disposed.
+        /// It is crucial that we don't capture current <see cref="VisualNode"/> instance
+        /// as draw operations can be cloned and may persist across subsequent scenes.
+        /// </summary>
+        /// <param name="drawOperations">Draw operations that need to be disposed.</param>
+        /// <returns>Disposable for given draw operations.</returns>
+        private static IDisposable CreateDisposeDrawOperations(List<IRef<IDrawOperation>> drawOperations)
+        {
+            return Disposable.Create(() =>
+            {
+                foreach (var operation in drawOperations)
+                {
+                    operation.Dispose();
+                }
+            });
+        }
+
+        public bool Disposed { get; private set; }
+
         public void Dispose()
         {
             _drawOperationsRefCounter?.Dispose();
-        }
 
-        private void DisposeDrawOperations()
-        {
-            foreach (var operation in DrawOperations)
-            {
-                operation.Dispose();
-            }
+            Disposed = true;
         }
     }
 }

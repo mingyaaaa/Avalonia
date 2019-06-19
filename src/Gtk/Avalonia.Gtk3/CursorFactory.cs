@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Gtk3.Interop;
 using Avalonia.Input;
 using Avalonia.Platform;
+using Avalonia.Platform.Interop;
 using CursorType = Avalonia.Gtk3.GdkCursorType;
 namespace Avalonia.Gtk3
 {
@@ -11,6 +12,7 @@ namespace Avalonia.Gtk3
         private static readonly Dictionary<StandardCursorType, object> CursorTypeMapping = new Dictionary
     <StandardCursorType, object>
         {
+            {StandardCursorType.None, CursorType.Blank},
             {StandardCursorType.AppStarting, CursorType.Watch},
             {StandardCursorType.Arrow, CursorType.LeftPtr},
             {StandardCursorType.Cross, CursorType.Cross},

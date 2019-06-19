@@ -3,11 +3,9 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
-using Avalonia.Input;
 using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
+using Avalonia.Input;
 
 namespace Avalonia.Controls.Primitives
 {
@@ -235,19 +233,6 @@ namespace Avalonia.Controls.Primitives
 
             if (e.MouseButton == MouseButton.Left)
                 CalendarDayButtonMouseUp?.Invoke(this, e);
-        }
-
-        /// <summary>
-        /// We need to simulate the MouseLeftButtonUp event for the
-        /// CalendarDayButton that stays in Pressed state after MouseCapture is
-        /// released since there is no actual MouseLeftButtonUp event for the
-        /// release.
-        /// </summary>
-        /// <param name="e">Event arguments.</param>
-        internal void SendMouseLeftButtonUp(PointerReleasedEventArgs e)
-        {
-            e.Handled = false;
-            base.OnPointerReleased(e);
         }
     }
 }

@@ -18,9 +18,9 @@ namespace Avalonia.Platform
         Size Constraint { get; }
 
         /// <summary>
-        /// The measured size of the text.
+        /// The measured bounds of the text.
         /// </summary>
-        Size Size { get; }
+        Rect Bounds{ get; }
 
         /// <summary>
         /// Gets the text.

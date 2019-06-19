@@ -9,7 +9,7 @@ using DWrite = SharpDX.DirectWrite;
 
 namespace Avalonia.Direct2D1.Media
 {
-    public class FormattedTextImpl : IFormattedTextImpl
+    internal class FormattedTextImpl : IFormattedTextImpl
     {
         public FormattedTextImpl(
             string text,
@@ -21,24 +21,21 @@ namespace Avalonia.Direct2D1.Media
         {
             Text = text;
 
-            var factory = AvaloniaLocator.Current.GetService<DWrite.Factory>();
-
-            var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface);
-
-            textFormat.WordWrapping =
-                wrapping == TextWrapping.Wrap ? DWrite.WordWrapping.Wrap : DWrite.WordWrapping.NoWrap;
-
-            TextLayout = new DWrite.TextLayout(
-                             factory,
-                             Text ?? string.Empty,
-                             textFormat,
-                             (float)constraint.Width,
-                             (float)constraint.Height)
+            using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface))
             {
-                TextAlignment = textAlignment.ToDirect2D()
-            };
+                textFormat.WordWrapping =
+                    wrapping == TextWrapping.Wrap ? DWrite.WordWrapping.Wrap : DWrite.WordWrapping.NoWrap;
 
-            textFormat.Dispose();
+                TextLayout = new DWrite.TextLayout(
+                                 Direct2D1Platform.DirectWriteFactory,
+                                 Text ?? string.Empty,
+                                 textFormat,
+                                 (float)constraint.Width,
+                                 (float)constraint.Height)
+                             {
+                                 TextAlignment = textAlignment.ToDirect2D()
+                             };
+            }
 
             if (spans != null)
             {
@@ -48,12 +45,12 @@ namespace Avalonia.Direct2D1.Media
                 }
             }
 
-            Size = Measure();
+            Bounds = Measure();
         }
 
         public Size Constraint => new Size(TextLayout.MaxWidth, TextLayout.MaxHeight);
 
-        public Size Size { get; }
+        public Rect Bounds { get; }
 
         public string Text { get; }
 
@@ -107,9 +104,10 @@ namespace Avalonia.Direct2D1.Media
             }
         }
 
-        private Size Measure()
+        private Rect Measure()
         {
             var metrics = TextLayout.Metrics;
+
             var width = metrics.WidthIncludingTrailingWhitespace;
 
             if (float.IsNaN(width))
@@ -117,7 +115,11 @@ namespace Avalonia.Direct2D1.Media
                 width = metrics.Width;
             }
 
-            return new Size(width, TextLayout.Metrics.Height);
+            return new Rect(
+                TextLayout.Metrics.Left,
+                TextLayout.Metrics.Top,
+                width,
+                TextLayout.Metrics.Height);
         }
     }
 }

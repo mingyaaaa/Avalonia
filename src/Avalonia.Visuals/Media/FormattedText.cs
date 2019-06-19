@@ -1,7 +1,6 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
 using System.Collections.Generic;
 using Avalonia.Platform;
 
@@ -37,6 +36,12 @@ namespace Avalonia.Media
         {
             _platform = platform;
         }
+
+        /// <summary>
+        /// Gets the bounds of the text within the <see cref="Constraint"/>.
+        /// </summary>
+        /// <returns>The bounds of the text.</returns>
+        public Rect Bounds => PlatformImpl.Bounds;
 
         /// <summary>
         /// Gets or sets the constraint of the text.
@@ -76,7 +81,7 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Gets or sets the aligment of the text.
+        /// Gets or sets the alignment of the text.
         /// </summary>
         public TextAlignment TextAlignment
         {
@@ -157,15 +162,6 @@ namespace Avalonia.Media
         public IEnumerable<Rect> HitTestTextRange(int index, int length)
         {
             return PlatformImpl.HitTestTextRange(index, length);
-        }
-
-        /// <summary>
-        /// Gets the size of the text, taking <see cref="Constraint"/> into account.
-        /// </summary>
-        /// <returns>The bounds box of the text.</returns>
-        public Size Measure()
-        {
-            return PlatformImpl.Size;
         }
 
         private void Set<T>(ref T field, T value)

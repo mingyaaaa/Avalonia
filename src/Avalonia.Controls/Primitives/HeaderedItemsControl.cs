@@ -1,8 +1,6 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
-using System.Linq;
 using Avalonia.Controls.Mixins;
 using Avalonia.Controls.Presenters;
 
@@ -11,7 +9,7 @@ namespace Avalonia.Controls.Primitives
     /// <summary>
     /// Represents an <see cref="ItemsControl"/> with a related header.
     /// </summary>
-    public class HeaderedItemsControl : ItemsControl
+    public class HeaderedItemsControl : ItemsControl, IContentPresenterHost
     {
         /// <summary>
         /// Defines the <see cref="Header"/> property.
@@ -42,17 +40,28 @@ namespace Avalonia.Controls.Primitives
         /// <summary>
         /// Gets the header presenter from the control's template.
         /// </summary>
-        public ContentPresenter HeaderPresenter
+        public IContentPresenter HeaderPresenter
         {
             get;
             private set;
         }
 
         /// <inheritdoc/>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        void IContentPresenterHost.RegisterContentPresenter(IContentPresenter presenter)
         {
-            HeaderPresenter = e.NameScope.Find<ContentPresenter>("PART_HeaderPresenter");
-            base.OnTemplateApplied(e);
+            RegisterContentPresenter(presenter);
+        }
+
+        /// <summary>
+        /// Called when an <see cref="IContentPresenter"/> is registered with the control.
+        /// </summary>
+        /// <param name="presenter">The presenter.</param>
+        protected virtual void RegisterContentPresenter(IContentPresenter presenter)
+        {
+            if (presenter.Name == "PART_HeaderPresenter")
+            {
+                HeaderPresenter = presenter;
+            }
         }
     }
 }

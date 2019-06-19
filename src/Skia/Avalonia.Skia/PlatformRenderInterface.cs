@@ -6,15 +6,48 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Media;
+using Avalonia.OpenGL;
 using Avalonia.Platform;
+using SkiaSharp;
 
 namespace Avalonia.Skia
 {
     /// <summary>
     /// Skia platform render interface.
     /// </summary>
-    public class PlatformRenderInterface : IPlatformRenderInterface
+    internal class PlatformRenderInterface : IPlatformRenderInterface
     {
+        private readonly ICustomSkiaGpu _customSkiaGpu;
+
+        private GRContext GrContext { get; }
+
+        public IEnumerable<string> InstalledFontNames => SKFontManager.Default.FontFamilies;
+
+        public PlatformRenderInterface(ICustomSkiaGpu customSkiaGpu)
+        {
+            if (customSkiaGpu != null)
+            {
+                _customSkiaGpu = customSkiaGpu;
+
+                GrContext = _customSkiaGpu.GrContext;
+
+                return;
+            }
+
+            var gl = AvaloniaLocator.Current.GetService<IWindowingPlatformGlFeature>();
+            if (gl != null)
+            {
+                var display = gl.ImmediateContext.Display;
+                gl.ImmediateContext.MakeCurrent();
+                using (var iface = display.Type == GlDisplayType.OpenGL2
+                    ? GRGlInterface.AssembleGlInterface((_, proc) => display.GlInterface.GetProcAddress(proc))
+                    : GRGlInterface.AssembleGlesInterface((_, proc) => display.GlInterface.GetProcAddress(proc)))
+                {
+                    GrContext = GRContext.Create(GRBackend.OpenGL, iface);
+                }
+            }
+        }
+
         /// <inheritdoc />
         public IFormattedTextImpl CreateFormattedText(
             string text,
@@ -26,6 +59,12 @@ namespace Avalonia.Skia
         {
             return new FormattedTextImpl(text, typeface, textAlignment, wrapping, constraint, spans);
         }
+
+        public IGeometryImpl CreateEllipseGeometry(Rect rect) => new EllipseGeometryImpl(rect);
+
+        public IGeometryImpl CreateLineGeometry(Point p1, Point p2) => new LineGeometryImpl(p1, p2);
+
+        public IGeometryImpl CreateRectangleGeometry(Rect rect) => new RectangleGeometryImpl(rect);
 
         /// <inheritdoc />
         public IStreamGeometryImpl CreateStreamGeometry()
@@ -49,46 +88,54 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public IBitmapImpl LoadBitmap(PixelFormat format, IntPtr data, int width, int height, int stride)
+        public IBitmapImpl LoadBitmap(PixelFormat format, IntPtr data, PixelSize size, Vector dpi, int stride)
         {
-            return new ImmutableBitmap(width, height, stride, format, data);
+            return new ImmutableBitmap(size, dpi, stride, format, data);
         }
 
         /// <inheritdoc />
-        public IRenderTargetBitmapImpl CreateRenderTargetBitmap(
-            int width,
-            int height,
-            double dpiX,
-            double dpiY)
+        public IRenderTargetBitmapImpl CreateRenderTargetBitmap(PixelSize size, Vector dpi)
         {
-            if (width < 1)
+            if (size.Width < 1)
             {
-                throw new ArgumentException("Width can't be less than 1", nameof(width));
+                throw new ArgumentException("Width can't be less than 1", nameof(size));
             }
 
-            if (height < 1)
+            if (size.Height < 1)
             {
-                throw new ArgumentException("Height can't be less than 1", nameof(height));
+                throw new ArgumentException("Height can't be less than 1", nameof(size));
             }
-
-            var dpi = new Vector(dpiX, dpiY);
 
             var createInfo = new SurfaceRenderTarget.CreateInfo
             {
-                Width = width,
-                Height = height,
+                Width = size.Width,
+                Height = size.Height,
                 Dpi = dpi,
                 DisableTextLcdRendering = false
             };
-            
+
             return new SurfaceRenderTarget(createInfo);
         }
 
         /// <inheritdoc />
-        public virtual IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces)
+        public IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces)
         {
+            if (_customSkiaGpu != null)
+            {
+                ICustomSkiaRenderTarget customRenderTarget = _customSkiaGpu.TryCreateRenderTarget(surfaces);
+
+                if (customRenderTarget != null)
+                {
+                    return new CustomRenderTarget(customRenderTarget);
+                }
+            }
+
             foreach (var surface in surfaces)
             {
+                if (surface is IGlPlatformSurface glSurface && GrContext != null)
+                {
+                    return new GlRenderTarget(GrContext, glSurface);
+                }
                 if (surface is IFramebufferPlatformSurface framebufferSurface)
                 {
                     return new FramebufferRenderTarget(framebufferSurface);
@@ -100,9 +147,9 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public IWriteableBitmapImpl CreateWriteableBitmap(int width, int height, PixelFormat? format = null)
+        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat? format = null)
         {
-            return new WriteableBitmapImpl(width, height, format);
+            return new WriteableBitmapImpl(size, dpi, format);
         }
     }
 }

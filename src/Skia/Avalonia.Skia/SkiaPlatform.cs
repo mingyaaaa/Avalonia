@@ -1,8 +1,6 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
-using Avalonia.Logging;
 using Avalonia.Platform;
 
 namespace Avalonia.Skia
@@ -17,8 +15,14 @@ namespace Avalonia.Skia
         /// </summary>
         public static void Initialize()
         {
-            var renderInterface = new PlatformRenderInterface();
-            
+            Initialize(new SkiaOptions());
+        }
+
+        public static void Initialize(SkiaOptions options)
+        {
+            var customGpu = options.CustomGpuFactory?.Invoke();
+            var renderInterface = new PlatformRenderInterface(customGpu);
+
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface);
         }

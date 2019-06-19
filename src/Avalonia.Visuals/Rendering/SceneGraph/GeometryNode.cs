@@ -1,7 +1,6 @@
 ﻿// Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
 using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -90,9 +89,14 @@ namespace Avalonia.Rendering.SceneGraph
         /// <inheritdoc/>
         public override bool HitTest(Point p)
         {
-            p *= Transform.Invert();
-            return (Brush != null && Geometry.FillContains(p)) || 
-                (Pen != null && Geometry.StrokeContains(Pen, p));
+            if (Transform.HasInverse)
+            {
+                p *= Transform.Invert();
+                return (Brush != null && Geometry.FillContains(p)) ||
+                    (Pen != null && Geometry.StrokeContains(Pen, p));
+            }
+
+            return false;
         }
     }
 }

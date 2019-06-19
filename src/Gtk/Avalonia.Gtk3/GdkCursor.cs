@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Avalonia.Gtk3
+﻿namespace Avalonia.Gtk3
 {
     enum GdkCursorType
     {
+        Blank = -2,
         CursorIsPixmap = -1,
         XCursor = 0,
         Arrow = 2,

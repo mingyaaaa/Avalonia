@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Avalonia.Remote.Protocol
 {
@@ -14,7 +12,7 @@ namespace Avalonia.Remote.Protocol
         public DefaultMessageTypeResolver(params Assembly[] assemblies)
         {
             foreach (var asm in
-                (assemblies ?? new Assembly[0]).Concat(new[]
+                (assemblies ?? Array.Empty<Assembly>()).Concat(new[]
                     {typeof(AvaloniaRemoteMessageGuidAttribute).GetTypeInfo().Assembly}))
             {
                 foreach (var t in asm.ExportedTypes)

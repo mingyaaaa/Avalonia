@@ -28,20 +28,19 @@ Code imported from https://github.com/elaberge/Metsys.Bson without any changes
 
 */
 
-using System.Text;
-using System.Text.RegularExpressions;
-using System.IO;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net;
-using System.Security.Cryptography;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Net;
 using System.Reflection;
-using System;
 using System.Runtime.Serialization;
-
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using Metsys.Bson.Configuration;
 // ReSharper disable All
 
@@ -251,7 +250,7 @@ namespace Metsys.Bson
                     _writer.Write((long)((DateTime)value).ToUniversalTime().Subtract(Helper.Epoch).TotalMilliseconds);
                     return;
                 case Types.Binary:
-                    WriteBinnary(value);
+                    WriteBinary(value);
                     return;
                 case Types.ScopedCode:
                     Write((ScopedCode)value);
@@ -309,7 +308,7 @@ namespace Metsys.Bson
             }
         }
 
-        private void WriteBinnary(object value)
+        private void WriteBinary(object value)
         {
             if (value is byte[])
             {
@@ -750,7 +749,7 @@ namespace Metsys.Bson
 
                         if (memberExpression.Expression.NodeType != ExpressionType.Parameter && memberExpression.Expression.NodeType != ExpressionType.Convert)
                         {
-                            throw new ArgumentException(string.Format("Expression '{0}' must resolve to top-level member.", lambdaExpression), "lambdaExpression");
+                            throw new ArgumentException(string.Format("Expression '{0}' must resolve to top-level member.", lambdaExpression), nameof(lambdaExpression));
                         }
                         return memberExpression.Member.Name;
                     default:
@@ -807,7 +806,7 @@ namespace Metsys.Bson
             {
                 return Activator.CreateInstance(typeof(List<>).MakeGenericType(itemType));
             }
-            if (type.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, new Type[0], null) != null)
+            if (type.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null) != null)
             {
                 return Activator.CreateInstance(type);
             }
@@ -833,14 +832,14 @@ namespace Metsys.Bson
             return enumerableType.IsGenericType ? enumerableType.GetGenericArguments()[0] : typeof(object);
         }
 
-        public static Type GetDictionarKeyType(Type enumerableType)
+        public static Type GetDictionaryKeyType(Type enumerableType)
         {
             return enumerableType.IsGenericType
                 ? enumerableType.GetGenericArguments()[0]
                 : typeof(object);
         }
 
-        public static Type GetDictionarValueType(Type enumerableType)
+        public static Type GetDictionaryValueType(Type enumerableType)
         {
             return enumerableType.IsGenericType
                 ? enumerableType.GetGenericArguments()[1]
@@ -854,7 +853,7 @@ namespace Metsys.Bson
                 return (IDictionary)Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(keyType, valueType));
             }
 
-            if (dictionaryType.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, new Type[0], null) != null)
+            if (dictionaryType.GetConstructor(BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null) != null)
             {
                 return (IDictionary)Activator.CreateInstance(dictionaryType);
             }
@@ -1191,10 +1190,6 @@ namespace Metsys.Bson
                 object container = null;
                 var property = typeHelper.FindProperty(name);
                 var propertyType = property != null ? property.Type : _typeMap.ContainsKey(storageType) ? _typeMap[storageType] : typeof(object);
-                if (property == null && typeHelper.Expando == null)
-                {
-                    throw new BsonException(string.Format("Deserialization failed: type {0} does not have a property named {1}", type.FullName, name));
-                }
                 if (property != null && property.Setter == null)
                 {
                     container = property.Getter(instance);
@@ -1202,7 +1197,8 @@ namespace Metsys.Bson
                 var value = isNull ? null : DeserializeValue(propertyType, storageType, container, options);
                 if (property == null)
                 {
-                    ((IDictionary<string, object>)typeHelper.Expando.Getter(instance))[name] = value;
+                    if (typeHelper.Expando != null)
+                        ((IDictionary<string, object>)typeHelper.Expando.Getter(instance))[name] = value;
                 }
                 else if (container == null && value != null && !property.Ignored)
                 {
@@ -1259,9 +1255,9 @@ namespace Metsys.Bson
 
         private object ReadDictionary(Type listType, object existingContainer, Options options)
         {
-            var valueType = ListHelper.GetDictionarValueType(listType);
+            var valueType = ListHelper.GetDictionaryValueType(listType);
             var isObject = typeof(object) == valueType;
-            var container = existingContainer == null ? ListHelper.CreateDictionary(listType, ListHelper.GetDictionarKeyType(listType), valueType) : (IDictionary)existingContainer;
+            var container = existingContainer == null ? ListHelper.CreateDictionary(listType, ListHelper.GetDictionaryKeyType(listType), valueType) : (IDictionary)existingContainer;
 
             while (!IsDone())
             {
@@ -1310,7 +1306,7 @@ namespace Metsys.Bson
         private string ReadString()
         {
             var length = _reader.ReadInt32();
-            var buffer = _reader.ReadBytes(length - 1); //todo: again, look at fragementation prevention
+            var buffer = _reader.ReadBytes(length - 1); //todo: again, look at fragmentation prevention
             _reader.ReadByte(); //null;
             Read(4 + length);
 

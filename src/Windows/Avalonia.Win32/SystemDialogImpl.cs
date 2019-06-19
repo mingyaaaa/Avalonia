@@ -1,12 +1,12 @@
-using Avalonia.Controls;
-using Avalonia.Controls.Platform;
-using Avalonia.Platform;
-using Avalonia.Win32.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Controls.Platform;
+using Avalonia.Platform;
+using Avalonia.Win32.Interop;
 
 namespace Avalonia.Win32
 {
@@ -21,7 +21,7 @@ namespace Avalonia.Win32
             var hWnd = parent?.Handle?.Handle ?? IntPtr.Zero;
             return Task.Factory.StartNew(() =>
             {
-                var result = new string[0];
+                var result = Array.Empty<string>();
 
                 Guid clsid = dialog is OpenFileDialog ? UnmanagedMethods.ShellIds.OpenFileDialog : UnmanagedMethods.ShellIds.SaveFileDialog;
                 Guid iid = UnmanagedMethods.ShellIds.IFileDialog;

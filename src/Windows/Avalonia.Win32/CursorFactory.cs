@@ -1,15 +1,11 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Win32.Interop;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Avalonia.Input;
 using Avalonia.Platform;
-using System.Runtime.InteropServices;
+using Avalonia.Win32.Interop;
 
 namespace Avalonia.Win32
 {
@@ -45,6 +41,7 @@ namespace Avalonia.Win32
         private static readonly Dictionary<StandardCursorType, int> CursorTypeMapping = new Dictionary
             <StandardCursorType, int>
         {
+            {StandardCursorType.None, 0},
             {StandardCursorType.AppStarting, 32650},
             {StandardCursorType.Arrow, 32512},
             {StandardCursorType.Cross, 32515},

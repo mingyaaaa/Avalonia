@@ -4,7 +4,6 @@
 using System;
 using System.Reactive.Linq;
 using Avalonia.Media;
-using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -19,6 +18,15 @@ namespace Avalonia.Controls.Presenters
 
         public static readonly StyledProperty<char> PasswordCharProperty =
             AvaloniaProperty.Register<TextPresenter, char>(nameof(PasswordChar));
+
+        public static readonly StyledProperty<IBrush> SelectionBrushProperty =
+            AvaloniaProperty.Register<TextPresenter, IBrush>(nameof(SelectionBrushProperty));
+
+        public static readonly StyledProperty<IBrush> SelectionForegroundBrushProperty =
+            AvaloniaProperty.Register<TextPresenter, IBrush>(nameof(SelectionForegroundBrushProperty));
+
+        public static readonly StyledProperty<IBrush> CaretBrushProperty =
+            AvaloniaProperty.Register<TextPresenter, IBrush>(nameof(CaretBrushProperty));
 
         public static readonly DirectProperty<TextPresenter, int> SelectionStartProperty =
             TextBox.SelectionStartProperty.AddOwner<TextPresenter>(
@@ -35,7 +43,13 @@ namespace Avalonia.Controls.Presenters
         private int _selectionStart;
         private int _selectionEnd;
         private bool _caretBlink;
-        private IBrush _highlightBrush;
+
+        static TextPresenter()
+        {
+            AffectsRender<TextPresenter>(PasswordCharProperty,
+                SelectionBrushProperty, SelectionForegroundBrushProperty,
+                SelectionStartProperty, SelectionEndProperty);
+        }
 
         public TextPresenter()
         {
@@ -50,6 +64,9 @@ namespace Avalonia.Controls.Presenters
 
             this.GetObservable(CaretIndexProperty)
                 .Subscribe(CaretIndexChanged);
+
+            this.GetObservable(PasswordCharProperty)
+                .Subscribe(_ => InvalidateFormattedText());
         }
 
         public int CaretIndex
@@ -70,6 +87,24 @@ namespace Avalonia.Controls.Presenters
         {
             get => GetValue(PasswordCharProperty);
             set => SetValue(PasswordCharProperty, value);
+        }
+
+        public IBrush SelectionBrush
+        {
+            get => GetValue(SelectionBrushProperty);
+            set => SetValue(SelectionBrushProperty, value);
+        }
+
+        public IBrush SelectionForegroundBrush
+        {
+            get => GetValue(SelectionForegroundBrushProperty);
+            set => SetValue(SelectionForegroundBrushProperty, value);
+        }
+        
+        public IBrush CaretBrush
+        {
+            get => GetValue(CaretBrushProperty);
+            set => SetValue(CaretBrushProperty, value);
         }
 
         public int SelectionStart
@@ -116,20 +151,15 @@ namespace Avalonia.Controls.Presenters
                 var start = Math.Min(selectionStart, selectionEnd);
                 var length = Math.Max(selectionStart, selectionEnd) - start;
 
-                // issue #600: set constaint before any FormattedText manipulation
+                // issue #600: set constraint before any FormattedText manipulation
                 //             see base.Render(...) implementation
                 FormattedText.Constraint = Bounds.Size;
 
                 var rects = FormattedText.HitTestTextRange(start, length);
 
-                if (_highlightBrush == null)
-                {
-                    _highlightBrush = (IBrush)this.FindResource("HighlightBrush");
-                }
-
                 foreach (var rect in rects)
                 {
-                    context.FillRectangle(_highlightBrush, rect);
+                    context.FillRectangle(SelectionBrush, rect);
                 }
             }
 
@@ -137,16 +167,21 @@ namespace Avalonia.Controls.Presenters
 
             if (selectionStart == selectionEnd)
             {
-                var backgroundColor = (((Control)TemplatedParent).GetValue(BackgroundProperty) as SolidColorBrush)?.Color;
-                var caretBrush = Brushes.Black;
+                var caretBrush = CaretBrush;
 
-                if (backgroundColor.HasValue)
+                if (caretBrush is null)
                 {
-                    byte red = (byte)~(backgroundColor.Value.R);
-                    byte green = (byte)~(backgroundColor.Value.G);
-                    byte blue = (byte)~(backgroundColor.Value.B);
+                    var backgroundColor = (((Control)TemplatedParent).GetValue(BackgroundProperty) as SolidColorBrush)?.Color;
+                    if (backgroundColor.HasValue)
+                    {
+                        byte red = (byte)~(backgroundColor.Value.R);
+                        byte green = (byte)~(backgroundColor.Value.G);
+                        byte blue = (byte)~(backgroundColor.Value.B);
 
-                    caretBrush = new SolidColorBrush(Color.FromRgb(red, green, blue));
+                        caretBrush = new SolidColorBrush(Color.FromRgb(red, green, blue));
+                    }
+                    else
+                        caretBrush = Brushes.Black;
                 }
 
                 if (_caretBlink)
@@ -188,6 +223,12 @@ namespace Avalonia.Controls.Presenters
                     _caretTimer.Stop();
                     _caretTimer.Start();
                     InvalidateVisual();
+                }
+                else
+                {
+                    _caretTimer.Start();
+                    InvalidateVisual();
+                    _caretTimer.Stop();
                 }
 
                 if (IsMeasureValid)
@@ -239,7 +280,7 @@ namespace Avalonia.Controls.Presenters
             {
                 result.Spans = new[]
                 {
-                    new FormattedTextStyleSpan(start, length, foregroundBrush: Brushes.White),
+                    new FormattedTextStyleSpan(start, length, SelectionForegroundBrush),
                 };
             }
 
@@ -262,7 +303,7 @@ namespace Avalonia.Controls.Presenters
                     Typeface = new Typeface(FontFamily, FontSize, FontStyle, FontWeight),
                     TextAlignment = TextAlignment,
                     Constraint = availableSize,
-                }.Measure();
+                }.Bounds.Size;
             }
         }
 

@@ -1,23 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Reactive.Disposables;
-using System.Text;
-using CoreAnimation;
-using CoreGraphics;
-using Foundation;
-using Avalonia.Controls.Platform;
+using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
-using Avalonia.Media;
-using Avalonia.Platform;
-using UIKit;
 using Avalonia.iOS.Specific;
-using ObjCRuntime;
-using Avalonia.Controls;
-using Avalonia.Controls.Platform.Surfaces;
+using Avalonia.Platform;
 using Avalonia.Rendering;
+using CoreGraphics;
+using Foundation;
+using ObjCRuntime;
+using UIKit;
 
 namespace Avalonia.iOS
 {
@@ -31,7 +23,7 @@ namespace Avalonia.iOS
         {
             _keyboardHelper = new KeyboardEventsHelper<TopLevelImpl>(this);
             AutoresizingMask = UIViewAutoresizing.All;
-            _keyboardHelper.ActivateAutoShowKeybord();
+            _keyboardHelper.ActivateAutoShowKeyboard();
         }
 
         [Export("hasText")]
@@ -76,9 +68,9 @@ namespace Avalonia.iOS
 
         public void SetInputRoot(IInputRoot inputRoot) => _inputRoot = inputRoot;
 
-        public Point PointToClient(Point point) => point;
+        public Point PointToClient(PixelPoint point) => point.ToPoint(1);
 
-        public Point PointToScreen(Point point) => point;
+        public PixelPoint PointToScreen(Point point) => PixelPoint.FromPoint(point, 1);
 
         public void SetCursor(IPlatformHandle cursor)
         {
@@ -94,11 +86,11 @@ namespace Avalonia.iOS
             {
                 var location = touch.LocationInView(this).ToAvalonia();
 
-                Input?.Invoke(new RawMouseEventArgs(
+                Input?.Invoke(new RawPointerEventArgs(
                     iOSPlatform.MouseDevice,
                     (uint)touch.Timestamp,
                     _inputRoot,
-                    RawMouseEventType.LeftButtonUp,
+                    RawPointerEventType.LeftButtonUp,
                     location,
                     InputModifiers.None));
             }
@@ -112,11 +104,11 @@ namespace Avalonia.iOS
             {
                 var location = touch.LocationInView(this).ToAvalonia();
                 _touchLastPoint = location;
-                Input?.Invoke(new RawMouseEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
-                    RawMouseEventType.Move, location, InputModifiers.None));
+                Input?.Invoke(new RawPointerEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
+                    RawPointerEventType.Move, location, InputModifiers.None));
 
-                Input?.Invoke(new RawMouseEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
-                    RawMouseEventType.LeftButtonDown, location, InputModifiers.None));
+                Input?.Invoke(new RawPointerEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
+                    RawPointerEventType.LeftButtonDown, location, InputModifiers.None));
             }
         }
 
@@ -127,8 +119,8 @@ namespace Avalonia.iOS
             {
                 var location = touch.LocationInView(this).ToAvalonia();
                 if (iOSPlatform.MouseDevice.Captured != null)
-                    Input?.Invoke(new RawMouseEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
-                        RawMouseEventType.Move, location, InputModifiers.LeftMouseButton));
+                    Input?.Invoke(new RawPointerEventArgs(iOSPlatform.MouseDevice, (uint)touch.Timestamp, _inputRoot,
+                        RawPointerEventType.Move, location, InputModifiers.LeftMouseButton));
                 else
                 {
                     //magic number based on test - correction of 0.02 is working perfect

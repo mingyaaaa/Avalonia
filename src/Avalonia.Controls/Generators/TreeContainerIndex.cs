@@ -22,7 +22,7 @@ namespace Avalonia.Controls.Generators
         private readonly Dictionary<IControl, object> _containerToItem = new Dictionary<IControl, object>();
 
         /// <summary>
-        /// Signalled whenever new containers are materialized.
+        /// Signaled whenever new containers are materialized.
         /// </summary>
         public event EventHandler<ItemContainerEventArgs> Materialized;
 
@@ -34,7 +34,12 @@ namespace Avalonia.Controls.Generators
         /// <summary>
         /// Gets the currently materialized containers.
         /// </summary>
-        public IEnumerable<IControl> Items => _containerToItem.Keys;
+        public IEnumerable<IControl> Containers => _containerToItem.Keys;
+
+        /// <summary>
+        /// Gets the items of currently materialized containers.
+        /// </summary>
+        public IEnumerable<object> Items => _containerToItem.Values;
 
         /// <summary>
         /// Adds an entry to the index.

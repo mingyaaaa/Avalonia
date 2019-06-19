@@ -1,12 +1,11 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
 namespace Avalonia.Controls
-{
+{   
     /// <summary>
     /// Displays a <see cref="Bitmap"/> image.
     /// </summary>
@@ -26,8 +25,8 @@ namespace Avalonia.Controls
 
         static Image()
         {
-            AffectsRender(SourceProperty);
-            AffectsRender(StretchProperty);
+            AffectsRender<Image>(SourceProperty, StretchProperty);
+            AffectsMeasure<Image>(SourceProperty, StretchProperty);
         }
 
         /// <summary>
@@ -59,7 +58,7 @@ namespace Avalonia.Controls
             if (source != null)
             {
                 Rect viewPort = new Rect(Bounds.Size);
-                Size sourceSize = new Size(source.PixelWidth, source.PixelHeight);
+                Size sourceSize = new Size(source.PixelSize.Width, source.PixelSize.Height);
                 Vector scale = Stretch.CalculateScaling(Bounds.Size, sourceSize);
                 Size scaledSize = sourceSize * scale;
                 Rect destRect = viewPort
@@ -68,7 +67,9 @@ namespace Avalonia.Controls
                 Rect sourceRect = new Rect(sourceSize)
                     .CenterRect(new Rect(destRect.Size / scale));
 
-                context.DrawImage(source, 1, sourceRect, destRect);
+                var interpolationMode = RenderOptions.GetBitmapInterpolationMode(this);
+
+                context.DrawImage(source, 1, sourceRect, destRect, interpolationMode);
             }
         }
 
@@ -80,19 +81,34 @@ namespace Avalonia.Controls
         protected override Size MeasureOverride(Size availableSize)
         {
             var source = Source;
+            var result = new Size();
 
             if (source != null)
             {
-                Size sourceSize = new Size(source.PixelWidth, source.PixelHeight);
-
+                Size sourceSize = new Size(source.PixelSize.Width, source.PixelSize.Height);
                 if (double.IsInfinity(availableSize.Width) || double.IsInfinity(availableSize.Height))
                 {
-                    return sourceSize;
+                    result = sourceSize;
                 }
                 else
                 {
-                    return Stretch.CalculateSize(availableSize, sourceSize);
+                    result = Stretch.CalculateSize(availableSize, sourceSize);
                 }
+            }
+
+            return result.Constrain(availableSize);
+        }
+
+        /// <inheritdoc/>
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            var source = Source;
+
+            if (source != null)
+            {
+                var sourceSize = new Size(source.PixelSize.Width, source.PixelSize.Height);
+                var result = Stretch.CalculateSize(finalSize, sourceSize);
+                return result;
             }
             else
             {

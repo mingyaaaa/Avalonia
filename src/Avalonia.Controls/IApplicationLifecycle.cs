@@ -1,8 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Avalonia.Controls
 {
@@ -12,13 +8,19 @@ namespace Avalonia.Controls
     public interface IApplicationLifecycle
     {
         /// <summary>
-        /// Sent when the application is exiting.
+        /// Sent when the application is starting up.
         /// </summary>
-        event EventHandler OnExit;
+        event EventHandler<StartupEventArgs> Startup;
 
         /// <summary>
-        /// Exits the application.
+        /// Sent when the application is exiting.
         /// </summary>
-        void Exit();
+        event EventHandler<ExitEventArgs> Exit;
+
+        /// <summary>
+        /// Shuts down the application and sets the exit code that is returned to the operating system when the application exits.
+        /// </summary>
+        /// <param name="exitCode">An integer exit code for an application. The default exit code is 0.</param>
+        void Shutdown(int exitCode = 0);
     }
 }

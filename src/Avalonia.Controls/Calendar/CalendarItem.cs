@@ -3,13 +3,13 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
+using System;
+using System.Diagnostics;
+using System.Globalization;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using System;
-using System.Diagnostics;
-using System.Globalization;
 
 namespace Avalonia.Controls.Primitives
 {
@@ -52,7 +52,7 @@ namespace Avalonia.Controls.Primitives
         internal Calendar Owner { get; set; }
         internal CalendarDayButton CurrentButton { get; set; }
 
-        public static StyledProperty<IBrush> HeaderBackgroundProperty = Calendar.HeaderBackgroundProperty.AddOwner<CalendarItem>();
+        public static readonly StyledProperty<IBrush> HeaderBackgroundProperty = Calendar.HeaderBackgroundProperty.AddOwner<CalendarItem>();
         public IBrush HeaderBackground
         {
             get { return GetValue(HeaderBackgroundProperty); }
@@ -934,22 +934,6 @@ namespace Avalonia.Controls.Primitives
                 // The button is in Pressed state. Change the state to normal.
                 if (e.Device.Captured == b)
                     e.Device.Capture(null);
-                // null check is added for unit tests
-                if (_downEventArg != null)
-                {
-                    var arg =
-                        new PointerReleasedEventArgs()
-                        {
-                            Device = _downEventArg.Device,
-                            MouseButton = _downEventArg.MouseButton,
-                            Handled = _downEventArg.Handled,
-                            InputModifiers = _downEventArg.InputModifiers,
-                            Route = _downEventArg.Route,
-                            Source = _downEventArg.Source
-                        };
-
-                    b.SendMouseLeftButtonUp(arg);
-                }
                 _lastCalendarDayButton = b;
             }
         }
@@ -1221,21 +1205,7 @@ namespace Avalonia.Controls.Primitives
                 if (e.Device.Captured == b)
                     e.Device.Capture(null);
                 //b.ReleaseMouseCapture();
-                if (_downEventArgYearView != null)
-                {
-                    var args =
-                        new PointerReleasedEventArgs()
-                        {
-                            Device = _downEventArgYearView.Device,
-                            MouseButton = _downEventArgYearView.MouseButton,
-                            Handled = _downEventArgYearView.Handled,
-                            InputModifiers = _downEventArgYearView.InputModifiers,
-                            Route = _downEventArgYearView.Route,
-                            Source = _downEventArgYearView.Source
-                        };
 
-                    b.SendMouseLeftButtonUp(args);
-                }
                 _lastCalendarButton = b;
             }
         }

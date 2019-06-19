@@ -2,21 +2,11 @@
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 using System;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Linq;
-using System.Reactive;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
-using Avalonia.Collections;
+using System.ComponentModel;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
-using Avalonia.Data;
-using Avalonia.Diagnostics;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Logging;
-using Avalonia.LogicalTree;
 using Avalonia.Rendering;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
@@ -31,7 +21,7 @@ namespace Avalonia.Controls
     ///
     /// - A <see cref="Tag"/> property to allow user-defined data to be attached to the control.
     /// </remarks>
-    public class Control : InputElement, IControl, INamed, ISupportInitialize, IVisualBrushInitialize, IRequiresTemplateInSetter
+    public class Control : InputElement, IControl, INamed, ISupportInitialize, IVisualBrushInitialize, ISetterValue
     {
         /// <summary>
         /// Defines the <see cref="FocusAdorner"/> property.
@@ -102,6 +92,13 @@ namespace Avalonia.Controls
         bool IDataTemplateHost.IsDataTemplatesInitialized => _dataTemplates != null;
 
         /// <inheritdoc/>
+        void ISetterValue.Initialize(ISetter setter)
+        {
+            throw new InvalidOperationException(
+                "Cannot use a control as a Setter value. Wrap the control in a <Template>.");
+        }
+
+        /// <inheritdoc/>
         void IVisualBrushInitialize.EnsureInitialized()
         {
             if (VisualRoot == null)
@@ -134,9 +131,9 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
-        /// Gets the element that recieves the focus adorner.
+        /// Gets the element that receives the focus adorner.
         /// </summary>
-        /// <returns>The control that recieves the focus adorner.</returns>
+        /// <returns>The control that receives the focus adorner.</returns>
         protected virtual IControl GetTemplateFocusTarget()
         {
             return this;

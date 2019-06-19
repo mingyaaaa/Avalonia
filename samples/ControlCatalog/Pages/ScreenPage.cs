@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Rendering;
 
 namespace ControlCatalog.Pages
 {
@@ -22,7 +23,8 @@ namespace ControlCatalog.Pages
         {
             base.Render(context);
             Window w = (Window)VisualRoot;
-            Screen[] screens = w.Screens.All;
+            var screens = w.Screens.All;
+            var scaling = ((IRenderRoot)w).RenderScaling;
 
             Pen p = new Pen(Brushes.Black);
             if (screens != null)
@@ -42,7 +44,11 @@ namespace ControlCatalog.Pages
                     context.DrawRectangle(p, boundsRect);
                     context.DrawRectangle(p, workingAreaRect);
                     
-                    FormattedText text = new FormattedText();
+                    FormattedText text = new FormattedText()
+                    {
+                        Typeface = Typeface.Default
+                    };
+
                     text.Text = $"Bounds: {screen.Bounds.Width}:{screen.Bounds.Height}";
                     context.DrawText(Brushes.Black, boundsRect.Position.WithY(boundsRect.Size.Height), text);
                     
@@ -52,7 +58,7 @@ namespace ControlCatalog.Pages
                     text.Text = $"Primary: {screen.Primary}";
                     context.DrawText(Brushes.Black, boundsRect.Position.WithY(boundsRect.Size.Height + 40), text);
                     
-                    text.Text = $"Current: {screen.Equals(w.Screens.ScreenFromBounds(new Rect(w.Position, w.Bounds.Size)))}";
+                    text.Text = $"Current: {screen.Equals(w.Screens.ScreenFromBounds(new PixelRect(w.Position, PixelSize.FromSize(w.Bounds.Size, scaling))))}";
                     context.DrawText(Brushes.Black, boundsRect.Position.WithY(boundsRect.Size.Height + 60), text);
                 }
 

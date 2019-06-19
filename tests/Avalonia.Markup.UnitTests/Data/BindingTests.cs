@@ -101,6 +101,28 @@ namespace Avalonia.Markup.UnitTests.Data
         }
 
         [Fact]
+        public void OneWayToSource_Binding_Should_React_To_DataContext_Changed()
+        {
+            var target = new TextBlock { Text = "bar" };
+            var binding = new Binding
+            {
+                Path = "Foo",
+                Mode = BindingMode.OneWayToSource,
+            };
+
+            target.Bind(TextBox.TextProperty, binding);
+
+            var source = new Source { Foo = "foo" };
+            target.DataContext = source;
+
+            Assert.Equal("bar", source.Foo);
+            target.Text = "baz";
+            Assert.Equal("baz", source.Foo);
+            source.Foo = "quz";
+            Assert.Equal("baz", target.Text);
+        }
+
+        [Fact]
         public void Default_BindingMode_Should_Be_Used()
         {
             var source = new Source { Foo = "foo" };
@@ -271,6 +293,39 @@ namespace Avalonia.Markup.UnitTests.Data
             target.Bind(ProgressBar.ValueProperty, binding);
 
             Assert.Equal(42, target.Value);
+        }
+
+        [Fact]
+        public void Null_Path_Should_Bind_To_DataContext()
+        {
+            var target = new TextBlock { DataContext = "foo" };
+            var binding = new Binding();
+
+            target.Bind(TextBlock.TextProperty, binding);
+
+            Assert.Equal("foo", target.Text);
+        }
+
+        [Fact]
+        public void Empty_Path_Should_Bind_To_DataContext()
+        {
+            var target = new TextBlock { DataContext = "foo" };
+            var binding = new Binding { Path = string.Empty };
+
+            target.Bind(TextBlock.TextProperty, binding);
+
+            Assert.Equal("foo", target.Text);
+        }
+
+        [Fact]
+        public void Dot_Path_Should_Bind_To_DataContext()
+        {
+            var target = new TextBlock { DataContext = "foo" };
+            var binding = new Binding { Path = "." };
+
+            target.Bind(TextBlock.TextProperty, binding);
+
+            Assert.Equal("foo", target.Text);
         }
 
         /// <summary>

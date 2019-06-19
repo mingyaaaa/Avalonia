@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Text;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
 using Avalonia.Platform;
@@ -53,9 +51,9 @@ namespace Avalonia.LinuxFramebuffer
             InputRoot = inputRoot;
         }
 
-        public Point PointToClient(Point point) => point;
+        public Point PointToClient(PixelPoint p) => p.ToPoint(1);
 
-        public Point PointToScreen(Point point) => point;
+        public PixelPoint PointToScreen(Point p) => PixelPoint.FromPoint(p, 1);
 
         public void SetCursor(IPlatformHandle cursor)
         {

@@ -4,8 +4,10 @@
 using System;
 using System.Collections;
 using System.Collections.Specialized;
+using Avalonia.Collections;
 using Avalonia.Controls.Generators;
 using Avalonia.Controls.Templates;
+using Avalonia.Controls.Utils;
 using Avalonia.Styling;
 
 namespace Avalonia.Controls.Presenters
@@ -40,6 +42,7 @@ namespace Avalonia.Controls.Presenters
             ItemsControl.MemberSelectorProperty.AddOwner<ItemsPresenterBase>();
 
         private IEnumerable _items;
+        private IDisposable _itemsSubscription;
         private bool _createdPanel;
         private IItemContainerGenerator _generator;
 
@@ -63,24 +66,12 @@ namespace Avalonia.Controls.Presenters
 
             set
             {
-                if (_createdPanel)
+                _itemsSubscription?.Dispose();
+                _itemsSubscription = null;
+
+                if (_createdPanel && value is INotifyCollectionChanged incc)
                 {
-                    INotifyCollectionChanged incc = _items as INotifyCollectionChanged;
-
-                    if (incc != null)
-                    {
-                        incc.CollectionChanged -= ItemsCollectionChanged;
-                    }
-                }
-
-                if (_createdPanel && value != null)
-                {
-                    INotifyCollectionChanged incc = value as INotifyCollectionChanged;
-
-                    if (incc != null)
-                    {
-                        incc.CollectionChanged += ItemsCollectionChanged;
-                    }
+                    _itemsSubscription = incc.WeakSubscribe(ItemsCollectionChanged);
                 }
 
                 SetAndRaise(ItemsProperty, ref _items, value);
@@ -215,7 +206,13 @@ namespace Avalonia.Controls.Presenters
         /// has been set, the items collection has been modified, or the panel has been created.
         /// </summary>
         /// <param name="e">A description of the change.</param>
-        protected abstract void ItemsChanged(NotifyCollectionChangedEventArgs e);
+        /// <remarks>
+        /// The panel is guaranteed to be created when this method is called.
+        /// </remarks>
+        protected virtual void ItemsChanged(NotifyCollectionChangedEventArgs e)
+        {
+            ItemContainerSync.ItemsChanged(this, Items, e);
+        }
 
         /// <summary>
         /// Creates the <see cref="Panel"/> when <see cref="ApplyTemplate"/> is called for the first
@@ -233,11 +230,9 @@ namespace Avalonia.Controls.Presenters
 
             _createdPanel = true;
 
-            INotifyCollectionChanged incc = Items as INotifyCollectionChanged;
-
-            if (incc != null)
+            if (_itemsSubscription == null && Items is INotifyCollectionChanged incc)
             {
-                incc.CollectionChanged += ItemsCollectionChanged;
+                _itemsSubscription = incc.WeakSubscribe(ItemsCollectionChanged);
             }
 
             PanelCreated(Panel);

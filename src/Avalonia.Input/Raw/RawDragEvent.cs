@@ -1,13 +1,9 @@
-﻿using System;
-using Avalonia.Input;
-using Avalonia.Input.Raw;
-
-namespace Avalonia.Input.Raw
+﻿namespace Avalonia.Input.Raw
 {
     public class RawDragEvent : RawInputEventArgs
     {
         public IInputElement InputRoot { get; }
-        public Point Location { get; }
+        public Point Location { get; set; }
         public IDataObject Data { get; }
         public DragDropEffects Effects { get; set; }
         public RawDragEventType Type { get; }

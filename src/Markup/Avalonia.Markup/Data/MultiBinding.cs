@@ -6,11 +6,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
-using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Metadata;
-using JetBrains.Annotations;
 
 namespace Avalonia.Data
 {
@@ -22,13 +19,18 @@ namespace Avalonia.Data
         /// <summary>
         /// Gets the collection of child bindings.
         /// </summary>
-        [Content]
+        [Content, AssignBinding]
         public IList<IBinding> Bindings { get; set; } = new List<IBinding>();
 
         /// <summary>
-        /// Gets or sets the <see cref="IValueConverter"/> to use.
+        /// Gets or sets the <see cref="IMultiValueConverter"/> to use.
         /// </summary>
         public IMultiValueConverter Converter { get; set; }
+
+        /// <summary>
+        /// Gets or sets a parameter to pass to <see cref="Converter"/>.
+        /// </summary>
+        public object ConverterParameter { get; set; }
 
         /// <summary>
         /// Gets or sets the value to use when the binding is unable to produce a value.
@@ -50,6 +52,11 @@ namespace Avalonia.Data
         /// </summary>
         public RelativeSource RelativeSource { get; set; }
 
+        /// <summary>
+        /// Gets or sets the string format.
+        /// </summary>
+        public string StringFormat { get; set; }
+
         /// <inheritdoc/>
         public InstancedBinding Initiate(
             IAvaloniaObject target,
@@ -64,7 +71,7 @@ namespace Avalonia.Data
 
             var targetType = targetProperty?.PropertyType ?? typeof(object);
             var children = Bindings.Select(x => x.Initiate(target, null));
-            var input = children.Select(x => x.Subject).CombineLatest().Select(x => ConvertValue(x, targetType));
+            var input = children.Select(x => x.Observable).CombineLatest().Select(x => ConvertValue(x, targetType));
             var mode = Mode == BindingMode.Default ?
                 targetProperty?.GetMetadata(target.GetType()).DefaultBindingMode : Mode;
 
@@ -82,11 +89,21 @@ namespace Avalonia.Data
 
         private object ConvertValue(IList<object> values, Type targetType)
         {
-            var converted = Converter.Convert(values, targetType, null, CultureInfo.CurrentCulture);
+            var culture = CultureInfo.CurrentCulture;
+            var converted = Converter.Convert(values, targetType, ConverterParameter, culture);
 
             if (converted == AvaloniaProperty.UnsetValue && FallbackValue != null)
             {
                 converted = FallbackValue;
+            }
+
+            // We only respect `StringFormat` if the type of the property we're assigning to will
+            // accept a string. Note that this is slightly different to WPF in that WPF only applies
+            // `StringFormat` for target type `string` (not `object`).
+            if (!string.IsNullOrWhiteSpace(StringFormat) && 
+                (targetType == typeof(string) || targetType == typeof(object)))
+            {
+                converted = string.Format(culture, StringFormat, converted);
             }
 
             return converted;

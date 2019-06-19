@@ -1,23 +1,22 @@
-﻿using Avalonia.Data.Core;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Reactive;
-using System.Text;
+using Avalonia.Data.Core;
+using Avalonia.Utilities;
 
 namespace Avalonia.Markup.Parsers
 {
     public static class ExpressionObserverBuilder
     {
-        internal static ExpressionNode Parse(string expression, bool enableValidation = false, Func<string, string, Type> typeResolver = null)
+        internal static (ExpressionNode Node, SourceMode Mode) Parse(string expression, bool enableValidation = false, Func<string, string, Type> typeResolver = null)
         {
             if (string.IsNullOrWhiteSpace(expression))
             {
-                return new EmptyExpressionNode();
+                return (new EmptyExpressionNode(), default);
             }
-
-            var reader = new Reader(expression);
+            
+            var reader = new CharacterReader(expression.AsSpan());
             var parser = new ExpressionParser(enableValidation, typeResolver);
-            var node = parser.Parse(reader);
+            var node = parser.Parse(ref reader);
 
             if (!reader.End)
             {
@@ -36,7 +35,7 @@ namespace Avalonia.Markup.Parsers
         {
             return new ExpressionObserver(
                 root,
-                Parse(expression, enableDataValidation, typeResolver),
+                Parse(expression, enableDataValidation, typeResolver).Node,
                 description ?? expression);
         }
 
@@ -50,7 +49,7 @@ namespace Avalonia.Markup.Parsers
             Contract.Requires<ArgumentNullException>(rootObservable != null);
             return new ExpressionObserver(
                 rootObservable,
-                Parse(expression, enableDataValidation, typeResolver),
+                Parse(expression, enableDataValidation, typeResolver).Node,
                 description ?? expression);
         }
 
@@ -66,8 +65,8 @@ namespace Avalonia.Markup.Parsers
             Contract.Requires<ArgumentNullException>(rootGetter != null);
 
             return new ExpressionObserver(
-                () => rootGetter(),
-                Parse(expression, enableDataValidation, typeResolver),
+                rootGetter,
+                Parse(expression, enableDataValidation, typeResolver).Node,
                 update,
                 description ?? expression);
         }

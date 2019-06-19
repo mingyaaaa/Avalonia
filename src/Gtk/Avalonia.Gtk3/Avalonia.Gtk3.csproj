@@ -3,12 +3,9 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefineConstants>$(DefineConstants);GTK3_PINVOKE</DefineConstants>
+    <PackageId>Avalonia.Gtk3</PackageId>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Controls\Avalonia.Controls.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Input\Avalonia.Input.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Interactivity\Avalonia.Interactivity.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Visuals\Avalonia.Visuals.csproj" />
+    <ProjectReference Include="..\..\..\packages\Avalonia\Avalonia.csproj" />
   </ItemGroup>
 </Project>

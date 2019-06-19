@@ -49,6 +49,7 @@ namespace Avalonia.Controls
     /// </summary>
     public class Window : WindowBase, IStyleable, IFocusScope, ILayoutRoot, INameScope
     {
+        /// <summary>
         /// Defines the <see cref="SizeToContent"/> property.
         /// </summary>
         public static readonly StyledProperty<SizeToContent> SizeToContentProperty =
@@ -85,7 +86,7 @@ namespace Avalonia.Controls
             AvaloniaProperty.Register<Window, WindowIcon>(nameof(Icon));
 
         /// <summary>
-        /// Defines the <see cref="WindowStartupLocation"/> proeprty.
+        /// Defines the <see cref="WindowStartupLocation"/> property.
         /// </summary>
         public static readonly DirectProperty<Window, WindowStartupLocation> WindowStartupLocationProperty =
             AvaloniaProperty.RegisterDirect<Window, WindowStartupLocation>(
@@ -99,7 +100,7 @@ namespace Avalonia.Controls
         private readonly NameScope _nameScope = new NameScope();
         private object _dialogResult;
         private readonly Size _maxPlatformClientSize;
-        private WindowStartupLocation _windowStartupLoction;
+        private WindowStartupLocation _windowStartupLocation;
 
         /// <summary>
         /// Initializes static members of the <see cref="Window"/> class.
@@ -236,8 +237,8 @@ namespace Avalonia.Controls
         /// </summary>
         public WindowStartupLocation WindowStartupLocation
         {
-            get { return _windowStartupLoction; }
-            set { SetAndRaise(WindowStartupLocationProperty, ref _windowStartupLoction, value); }
+            get { return _windowStartupLocation; }
+            set { SetAndRaise(WindowStartupLocationProperty, ref _windowStartupLocation, value); }
         }
 
         /// <inheritdoc/>
@@ -249,7 +250,7 @@ namespace Avalonia.Controls
         /// <summary>
         /// Fired before a window is closed.
         /// </summary>
-        public event EventHandler<CancelEventArgs> Closing;
+        public event EventHandler<CancelEventArgs> Closing;      
 
         private static void AddWindow(Window window)
         {
@@ -290,7 +291,8 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="dialogResult">The dialog result.</param>
         /// <remarks>
-        /// When the window is shown with the <see cref="ShowDialog{TResult}"/> method, the
+        /// When the window is shown with the <see cref="ShowDialog{TResult}(IWindowImpl)"/>
+        /// or <see cref="ShowDialog{TResult}(Window)"/> method, the
         /// resulting task will produce the <see cref="_dialogResult"/> value when the window
         /// is closed.
         /// </remarks>
@@ -302,17 +304,23 @@ namespace Avalonia.Controls
 
         internal void Close(bool ignoreCancel)
         {
+            bool close = true;
+
             try
             {
                 if (!ignoreCancel && HandleClosing())
                 {
+                    close = false;
                     return;
                 }
             }
             finally
             {
-                PlatformImpl?.Dispose();
-                HandleClosed();
+                if (close)
+                {
+                    PlatformImpl?.Dispose();
+                    HandleClosed();
+                }
             }
         }
 
@@ -322,8 +330,7 @@ namespace Avalonia.Controls
         protected virtual bool HandleClosing()
         {
             var args = new CancelEventArgs();
-            Closing?.Invoke(this, args);
-
+            OnClosing(args);
             return args.Cancel;
         }
 
@@ -363,8 +370,16 @@ namespace Avalonia.Controls
         /// <summary>
         /// Shows the window.
         /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// The window has already been closed.
+        /// </exception>
         public override void Show()
         {
+            if (PlatformImpl == null)
+            {
+                throw new InvalidOperationException("Cannot re-show a closed window.");
+            }
+
             if (IsVisible)
             {
                 return;
@@ -381,18 +396,23 @@ namespace Avalonia.Controls
                 PlatformImpl?.Show();
                 Renderer?.Start();
             }
-            SetWindowStartupLocation();
+            SetWindowStartupLocation(Owner?.PlatformImpl);
+            OnOpened(EventArgs.Empty);
         }
 
         /// <summary>
         /// Shows the window as a dialog.
         /// </summary>
+        /// <param name="owner">The dialog's owner window.</param>
+        /// <exception cref="InvalidOperationException">
+        /// The window has already been closed.
+        /// </exception>
         /// <returns>
         /// A task that can be used to track the lifetime of the dialog.
         /// </returns>
-        public Task ShowDialog()
+        public Task ShowDialog(Window owner)
         {
-            return ShowDialog<object>();
+            return ShowDialog<object>(owner);
         }
 
         /// <summary>
@@ -401,11 +421,27 @@ namespace Avalonia.Controls
         /// <typeparam name="TResult">
         /// The type of the result produced by the dialog.
         /// </typeparam>
+        /// <param name="owner">The dialog's owner window.</param>
         /// <returns>.
-        /// A task that can be used to retrive the result of the dialog when it closes.
+        /// A task that can be used to retrieve the result of the dialog when it closes.
         /// </returns>
-        public Task<TResult> ShowDialog<TResult>()
+        public Task<TResult> ShowDialog<TResult>(Window owner) => ShowDialog<TResult>(owner.PlatformImpl);
+
+        /// <summary>
+        /// Shows the window as a dialog.
+        /// </summary>
+        /// <typeparam name="TResult">
+        /// The type of the result produced by the dialog.
+        /// </typeparam>
+        /// <param name="owner">The dialog's owner window.</param>
+        /// <returns>.
+        /// A task that can be used to retrieve the result of the dialog when it closes.
+        /// </returns>
+        public Task<TResult> ShowDialog<TResult>(IWindowImpl owner)
         {
+            if (owner == null)
+                throw new ArgumentNullException(nameof(owner));
+
             if (IsVisible)
             {
                 throw new InvalidOperationException("The window is already being shown.");
@@ -414,60 +450,60 @@ namespace Avalonia.Controls
             AddWindow(this);
 
             EnsureInitialized();
-            SetWindowStartupLocation();
             IsVisible = true;
             LayoutManager.ExecuteInitialLayoutPass(this);
 
+            var result = new TaskCompletionSource<TResult>();
+
             using (BeginAutoSizing())
             {
-                var affectedWindows = Application.Current.Windows.Where(w => w.IsEnabled && w != this).ToList();
-                var activated = affectedWindows.Where(w => w.IsActive).FirstOrDefault();
-                SetIsEnabled(affectedWindows, false);
 
-                var modal = PlatformImpl?.ShowDialog();
-                var result = new TaskCompletionSource<TResult>();
+                PlatformImpl?.ShowDialog(owner);
 
                 Renderer?.Start();
-
                 Observable.FromEventPattern<EventHandler, EventArgs>(
                     x => this.Closed += x,
                     x => this.Closed -= x)
                     .Take(1)
                     .Subscribe(_ =>
                     {
-                        modal?.Dispose();
-                        SetIsEnabled(affectedWindows, true);
-                        activated?.Activate();
+                        owner.Activate();
                         result.SetResult((TResult)(_dialogResult ?? default(TResult)));
                     });
-
-                return result.Task;
+                OnOpened(EventArgs.Empty);
             }
+
+            SetWindowStartupLocation(owner);
+            return result.Task;
         }
 
-        void SetIsEnabled(IEnumerable<Window> windows, bool isEnabled)
+        private void SetWindowStartupLocation(IWindowBaseImpl owner = null)
         {
-            foreach (var window in windows)
-            {
-                window.IsEnabled = isEnabled;
-            }
-        }
+            var scaling = owner?.Scaling ?? PlatformImpl?.Scaling ?? 1;
 
-        void SetWindowStartupLocation()
-        {
+            // TODO: We really need non-client size here.
+            var rect = new PixelRect(
+                PixelPoint.Origin,
+                PixelSize.FromSize(ClientSize, scaling));
+
             if (WindowStartupLocation == WindowStartupLocation.CenterScreen)
             {
-                var screen = Screens.ScreenFromPoint(Bounds.Position);
+                var screen = Screens.ScreenFromPoint(owner?.Position ?? Position);
 
                 if (screen != null)
-                    Position = screen.WorkingArea.CenterRect(new Rect(ClientSize)).Position;
+                {
+                    Position = screen.WorkingArea.CenterRect(rect).Position;
+                }
             }
             else if (WindowStartupLocation == WindowStartupLocation.CenterOwner)
             {
-                if (Owner != null)
+                if (owner != null)
                 {
-                    var positionAsSize = Owner.ClientSize / 2 - ClientSize / 2;
-                    Position = Owner.Position + new Point(positionAsSize.Width, positionAsSize.Height);
+                    // TODO: We really need non-client size here.
+                    var ownerRect = new PixelRect(
+                        owner.Position,
+                        PixelSize.FromSize(owner.ClientSize, scaling));
+                    Position = ownerRect.CenterRect(rect).Position;
                 }
             }
         }
@@ -539,6 +575,17 @@ namespace Avalonia.Controls
 
             base.HandleResized(clientSize);
         }
+
+        /// <summary>
+        /// Raises the <see cref="Closing"/> event.
+        /// </summary>
+        /// <param name="e">The event args.</param>
+        /// <remarks>
+        /// A type that derives from <see cref="Window"/>  may override <see cref="OnClosing"/>. The
+        /// overridden method must call <see cref="OnClosing"/> on the base class if the
+        /// <see cref="Closing"/> event needs to be raised.
+        /// </remarks>
+        protected virtual void OnClosing(CancelEventArgs e) => Closing?.Invoke(this, e);
     }
 }
 

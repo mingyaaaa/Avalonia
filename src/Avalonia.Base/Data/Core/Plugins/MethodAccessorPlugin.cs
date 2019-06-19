@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Avalonia.Data;
-using System.Reflection;
 using System.Linq;
+using System.Reflection;
 
 namespace Avalonia.Data.Core.Plugins
 {
@@ -24,7 +21,7 @@ namespace Avalonia.Data.Core.Plugins
             {
                 if (method.GetParameters().Length + (method.ReturnType == typeof(void) ? 0 : 1) > 8)
                 {
-                    var exception = new ArgumentException("Cannot create a binding accessor for a method with more than 8 parameters or more than 7 parameters if it has a non-void return type.", nameof(method));
+                    var exception = new ArgumentException("Cannot create a binding accessor for a method with more than 8 parameters or more than 7 parameters if it has a non-void return type.", nameof(methodName));
                     return new PropertyError(new BindingNotification(exception, BindingErrorType.Error));
                 }
 

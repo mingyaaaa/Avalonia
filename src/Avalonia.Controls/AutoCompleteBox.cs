@@ -58,7 +58,6 @@ namespace Avalonia.Controls
     /// <see cref="E:Avalonia.Controls.AutoCompleteBox.Populating" />
     /// event.
     /// </summary>
-    /// <QualityBand>Stable</QualityBand>
     public class PopulatingEventArgs : CancelEventArgs
     {
         /// <summary>
@@ -97,7 +96,6 @@ namespace Avalonia.Controls
     /// <typeparam name="T">The type used for filtering the
     /// <see cref="T:Avalonia.Controls.AutoCompleteBox" />. This type can
     /// be either a string or an object.</typeparam>
-    /// <QualityBand>Stable</QualityBand>
     public delegate bool AutoCompleteFilterPredicate<T>(string search, T item);
 
     /// <summary>
@@ -107,7 +105,6 @@ namespace Avalonia.Controls
     /// <see cref="P:Avalonia.Controls.AutoCompleteBox.ItemsSource" />
     /// property for display in the drop-down.
     /// </summary>
-    /// <QualityBand>Stable</QualityBand>
     public enum AutoCompleteFilterMode
     {
         /// <summary>
@@ -352,8 +349,8 @@ namespace Avalonia.Controls
         private Func<string, CancellationToken, Task<IEnumerable<object>>> _asyncPopulator;
         private CancellationTokenSource _populationCancellationTokenSource;
 
-        private bool _itemTemplateIsFromValueMemeberBinding = true;
-        private bool _settingItemTemplateFromValueMemeberBinding;
+        private bool _itemTemplateIsFromValueMemberBinding = true;
+        private bool _settingItemTemplateFromValueMemberBinding;
 
         private object _selectedItem;
         private bool _isDropDownOpen;
@@ -788,12 +785,12 @@ namespace Avalonia.Controls
 
         private void OnItemTemplatePropertyChanged(AvaloniaPropertyChangedEventArgs e)
         {
-            if (!_settingItemTemplateFromValueMemeberBinding)
-                _itemTemplateIsFromValueMemeberBinding = false;
+            if (!_settingItemTemplateFromValueMemberBinding)
+                _itemTemplateIsFromValueMemberBinding = false;
         }
         private void OnValueMemberBindingChanged(IBinding value)
         {
-            if(_itemTemplateIsFromValueMemeberBinding)
+            if(_itemTemplateIsFromValueMemberBinding)
             {
                 var template =
                     new FuncDataTemplate(
@@ -805,9 +802,9 @@ namespace Avalonia.Controls
                             return control;
                         });
 
-                _settingItemTemplateFromValueMemeberBinding = true;
+                _settingItemTemplateFromValueMemberBinding = true;
                 ItemTemplate = template;
-                _settingItemTemplateFromValueMemeberBinding = false;
+                _settingItemTemplateFromValueMemberBinding = false;
             }
         }
 
@@ -1893,7 +1890,7 @@ namespace Avalonia.Controls
         {
             bool callTextChanged = false;
             // Update the Text dependency property
-            if ((userInitiated == null || userInitiated == true) && Text != value)
+            if ((userInitiated ?? true) && Text != value)
             {
                 _ignoreTextPropertyChange++;
                 Text = value;
