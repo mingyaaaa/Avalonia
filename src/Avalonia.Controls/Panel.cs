@@ -1,12 +1,12 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
+using Avalonia.Controls.Presenters;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Metadata;
+using Avalonia.Reactive;
 
 namespace Avalonia.Controls
 {
@@ -17,12 +17,12 @@ namespace Avalonia.Controls
     /// Controls can be added to a <see cref="Panel"/> by adding them to its <see cref="Children"/>
     /// collection. All children are layed out to fill the panel.
     /// </remarks>
-    public class Panel : Control, IPanel
+    public class Panel : Control, IChildIndexProvider
     {
         /// <summary>
         /// Defines the <see cref="Background"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> BackgroundProperty =
+        public static readonly StyledProperty<IBrush?> BackgroundProperty =
             Border.BackgroundProperty.AddOwner<Panel>();
 
         /// <summary>
@@ -32,6 +32,8 @@ namespace Avalonia.Controls
         {
             AffectsRender<Panel>(BackgroundProperty);
         }
+
+        private EventHandler<ChildIndexChangedEventArgs>? _childIndexChanged;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Panel"/> class.
@@ -50,17 +52,39 @@ namespace Avalonia.Controls
         /// <summary>
         /// Gets or Sets Panel background brush.
         /// </summary>
-        public IBrush Background
+        public IBrush? Background
         {
-            get { return GetValue(BackgroundProperty); }
-            set { SetValue(BackgroundProperty, value); }
+            get => GetValue(BackgroundProperty);
+            set => SetValue(BackgroundProperty, value);
+        }
+
+        /// <summary>
+        /// Gets whether the <see cref="Panel"/> hosts the items created by an <see cref="ItemsPresenter"/>.
+        /// </summary>
+        public bool IsItemsHost { get; internal set; }
+
+        event EventHandler<ChildIndexChangedEventArgs>? IChildIndexProvider.ChildIndexChanged
+        {
+            add
+            {
+                if (_childIndexChanged is null)
+                    Children.PropertyChanged += ChildrenPropertyChanged;
+                _childIndexChanged += value;
+            }
+
+            remove
+            {
+                _childIndexChanged -= value;
+                if (_childIndexChanged is null)
+                    Children.PropertyChanged -= ChildrenPropertyChanged;
+            }
         }
 
         /// <summary>
         /// Renders the visual to a <see cref="DrawingContext"/>.
         /// </summary>
         /// <param name="context">The drawing context.</param>
-        public override void Render(DrawingContext context)
+        public sealed override void Render(DrawingContext context)
         {
             var background = Background;
             if (background != null)
@@ -77,11 +101,13 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="properties">The properties.</param>
         protected static void AffectsParentArrange<TPanel>(params AvaloniaProperty[] properties)
-            where TPanel : class, IPanel
+            where TPanel : Panel
         {
+            var invalidateObserver = new AnonymousObserver<AvaloniaPropertyChangedEventArgs>(
+                static e => AffectsParentArrangeInvalidate<TPanel>(e));
             foreach (var property in properties)
             {
-                property.Changed.Subscribe(AffectsParentArrangeInvalidate<TPanel>);
+                property.Changed.Subscribe(invalidateObserver);
             }
         }
 
@@ -90,11 +116,13 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="properties">The properties.</param>
         protected static void AffectsParentMeasure<TPanel>(params AvaloniaProperty[] properties)
-            where TPanel : class, IPanel
+            where TPanel : Panel
         {
+            var invalidateObserver = new AnonymousObserver<AvaloniaPropertyChangedEventArgs>(
+                static e => AffectsParentMeasureInvalidate<TPanel>(e));
             foreach (var property in properties)
             {
-                property.Changed.Subscribe(AffectsParentMeasureInvalidate<TPanel>);
+                property.Changed.Subscribe(invalidateObserver);
             }
         }
 
@@ -103,35 +131,43 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="sender">The event sender.</param>
         /// <param name="e">The event args.</param>
-        protected virtual void ChildrenChanged(object sender, NotifyCollectionChangedEventArgs e)
+        protected virtual void ChildrenChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            List<Control> controls;
-
             switch (e.Action)
             {
                 case NotifyCollectionChangedAction.Add:
-                    controls = e.NewItems.OfType<Control>().ToList();
-                    LogicalChildren.InsertRange(e.NewStartingIndex, controls);
-                    VisualChildren.AddRange(e.NewItems.OfType<Visual>());
+                    if (!IsItemsHost)
+                    {
+                        LogicalChildren.InsertRange(e.NewStartingIndex, e.NewItems!.OfType<Control>().ToList());
+                    }
+                    VisualChildren.InsertRange(e.NewStartingIndex, e.NewItems!.OfType<Visual>());
                     break;
 
                 case NotifyCollectionChangedAction.Move:
-                    LogicalChildren.MoveRange(e.OldStartingIndex, e.OldItems.Count, e.NewStartingIndex);
-                    VisualChildren.MoveRange(e.OldStartingIndex, e.OldItems.Count, e.NewStartingIndex);
+                    if (!IsItemsHost)
+                    {
+                        LogicalChildren.MoveRange(e.OldStartingIndex, e.OldItems!.Count, e.NewStartingIndex);
+                    }
+                    VisualChildren.MoveRange(e.OldStartingIndex, e.OldItems!.Count, e.NewStartingIndex);
                     break;
 
                 case NotifyCollectionChangedAction.Remove:
-                    controls = e.OldItems.OfType<Control>().ToList();
-                    LogicalChildren.RemoveAll(controls);
-                    VisualChildren.RemoveAll(e.OldItems.OfType<Visual>());
+                    if (!IsItemsHost)
+                    {
+                        LogicalChildren.RemoveAll(e.OldItems!.OfType<Control>().ToList());
+                    }
+                    VisualChildren.RemoveAll(e.OldItems!.OfType<Visual>());
                     break;
 
                 case NotifyCollectionChangedAction.Replace:
-                    for (var i = 0; i < e.OldItems.Count; ++i)
+                    for (var i = 0; i < e.OldItems!.Count; ++i)
                     {
                         var index = i + e.OldStartingIndex;
-                        var child = (IControl)e.NewItems[i];
-                        LogicalChildren[index] = child;
+                        var child = (Control)e.NewItems![i]!;
+                        if (!IsItemsHost)
+                        {
+                            LogicalChildren[index] = child;
+                        }
                         VisualChildren[index] = child;
                     }
                     break;
@@ -140,23 +176,47 @@ namespace Avalonia.Controls
                     throw new NotSupportedException();
             }
 
+            _childIndexChanged?.Invoke(this, ChildIndexChangedEventArgs.ChildIndexesReset);
+            InvalidateMeasureOnChildrenChanged();
+        }
+
+        private protected virtual void InvalidateMeasureOnChildrenChanged()
+        {
             InvalidateMeasure();
         }
 
-        private static void AffectsParentArrangeInvalidate<TPanel>(AvaloniaPropertyChangedEventArgs e)
-            where TPanel : class, IPanel
+        private void ChildrenPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            var control = e.Sender as IControl;
+            if (e.PropertyName == nameof(Children.Count) || e.PropertyName is null)
+                _childIndexChanged?.Invoke(this, ChildIndexChangedEventArgs.TotalCountChanged);
+        }
+
+        private static void AffectsParentArrangeInvalidate<TPanel>(AvaloniaPropertyChangedEventArgs e)
+            where TPanel : Panel
+        {
+            var control = e.Sender as Control;
             var panel = control?.VisualParent as TPanel;
             panel?.InvalidateArrange();
         }
 
         private static void AffectsParentMeasureInvalidate<TPanel>(AvaloniaPropertyChangedEventArgs e)
-            where TPanel : class, IPanel
+            where TPanel : Panel
         {
-            var control = e.Sender as IControl;
+            var control = e.Sender as Control;
             var panel = control?.VisualParent as TPanel;
             panel?.InvalidateMeasure();
+        }
+
+        int IChildIndexProvider.GetChildIndex(ILogical child)
+        {
+            return child is Control control ? Children.IndexOf(control) : -1;
+        }
+
+        /// <inheritdoc />
+        bool IChildIndexProvider.TryGetTotalCount(out int count)
+        {
+            count = Children.Count;
+            return true;
         }
     }
 }

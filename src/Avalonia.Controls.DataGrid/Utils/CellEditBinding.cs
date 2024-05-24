@@ -1,10 +1,7 @@
 ﻿using Avalonia.Data;
 using Avalonia.Reactive;
 using System;
-using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
-using System.Reactive.Subjects;
-using System.Text;
 
 namespace Avalonia.Controls.Utils
 {
@@ -18,16 +15,16 @@ namespace Avalonia.Controls.Utils
 
     internal class CellEditBinding : ICellEditBinding
     {
-        private readonly Subject<bool> _changedSubject = new Subject<bool>();
+        private readonly LightweightSubject<bool> _changedSubject = new();
         private readonly List<Exception> _validationErrors = new List<Exception>();
         private readonly SubjectWrapper _inner;
 
         public bool IsValid => _validationErrors.Count <= 0;
         public IEnumerable<Exception> ValidationErrors => _validationErrors;
         public IObservable<bool> ValidationChanged => _changedSubject;
-        public ISubject<object> InternalSubject => _inner;
+        public IAvaloniaSubject<object> InternalSubject => _inner;
 
-        public CellEditBinding(ISubject<object> bindingSourceSubject)
+        public CellEditBinding(IAvaloniaSubject<object> bindingSourceSubject)
         {
             _inner = new SubjectWrapper(bindingSourceSubject, this);
         }
@@ -50,16 +47,16 @@ namespace Avalonia.Controls.Utils
             return IsValid;
         }
 
-        class SubjectWrapper : LightweightObservableBase<object>, ISubject<object>, IDisposable
+        class SubjectWrapper : LightweightObservableBase<object>, IAvaloniaSubject<object>, IDisposable
         {
-            private readonly ISubject<object> _sourceSubject;
+            private readonly IAvaloniaSubject<object> _sourceSubject;
             private readonly CellEditBinding _editBinding;
             private IDisposable _subscription;
             private object _controlValue;
             private bool _isControlValueSet = false;
             private bool _settingSourceValue = false;
 
-            public SubjectWrapper(ISubject<object> bindingSourceSubject, CellEditBinding editBinding)
+            public SubjectWrapper(IAvaloniaSubject<object> bindingSourceSubject, CellEditBinding editBinding)
             {
                 _sourceSubject = bindingSourceSubject;
                 _editBinding = editBinding;
@@ -67,11 +64,14 @@ namespace Avalonia.Controls.Utils
 
             private void SetSourceValue(object value)
             {
-                _settingSourceValue = true;
+                if (!_settingSourceValue)
+                {
+                    _settingSourceValue = true;
 
-                _sourceSubject.OnNext(value);
+                    _sourceSubject.OnNext(value);
 
-                _settingSourceValue = false;
+                    _settingSourceValue = false;
+                }
             }
             private void SetControlValue(object value)
             {

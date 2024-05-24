@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Linq;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
@@ -16,31 +13,28 @@ namespace Avalonia.Controls.UnitTests
         [Fact]
         public void Should_Be_Styled_As_UserControl()
         {
-            using (UnitTestApplication.Start(TestServices.RealStyler))
+            var target = new UserControl();
+            var root = new TestRoot
             {
-                var target = new UserControl();
-                var root = new TestRoot
+                Styles =
                 {
-                    Styles =
+                    new Style(x => x.OfType<UserControl>())
                     {
-                        new Style(x => x.OfType<UserControl>())
+                        Setters =
                         {
-                            Setters = new[]
-                            {
-                                new Setter(TemplatedControl.TemplateProperty, GetTemplate())
-                            }
+                            new Setter(TemplatedControl.TemplateProperty, GetTemplate())
                         }
-                    },
-                    Child = target,
-                };
+                    }
+                },
+                Child = target,
+            };
 
-                Assert.NotNull(target.Template);
-            }
+            Assert.NotNull(target.Template);
         }
 
-        private FuncControlTemplate GetTemplate()
+        private static FuncControlTemplate GetTemplate()
         {
-            return new FuncControlTemplate<UserControl>(parent =>
+            return new FuncControlTemplate<UserControl>((parent, scope) =>
             {
                 return new Border
                 {
@@ -49,7 +43,7 @@ namespace Avalonia.Controls.UnitTests
                     {
                         Name = "PART_ContentPresenter",
                         [~ContentPresenter.ContentProperty] = parent[~ContentControl.ContentProperty],
-                    }
+                    }.RegisterInNameScope(scope)
                 };
             });
         }

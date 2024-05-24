@@ -102,9 +102,13 @@ csx
 AppPackages/
 
 # NCrunch
+.NCrunch_*/
 _NCrunch_*/
 *.ncrunchsolution.user
 nCrunchTemp_*
+
+# CodeRush
+.cr/
 
 # Others
 sql/
@@ -117,6 +121,7 @@ ClientBin/
 *.[Pp]ublish.xml
 *.pfx
 *.publishsettings
+Events_Avalonia.cs
 
 # RIA/Silverlight projects
 Generated_Code/
@@ -188,13 +193,29 @@ dirs.sln
 
 
 ##################
-# XCode
+# Xcode
 ##################
 Index/
 Logs/
 ModuleCache.noindex/
 Build/Intermediates.noindex/
-info.plist
 build-intermediate
 obj-Direct2D1/
 obj-Skia/
+
+##################
+# Vim
+##################
+.vim
+coc-settings.json
+.ccls-cache
+.ccls
+*.map
+src/Browser/Avalonia.Browser.Blazor/wwwroot/*.js
+src/Browser/Avalonia.Browser.Blazor/Interop/Typescript/*.js
+node_modules
+src/Browser/Avalonia.Browser.Blazor/webapp/package-lock.json
+src/Browser/Avalonia.Browser.Blazor/wwwroot
+src/Browser/Avalonia.Browser/wwwroot
+api/diff
+src/Browser/Avalonia.Browser/staticwebassets

@@ -1,10 +1,9 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.IO;
 using System.Threading;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Platform.Internal;
 using Avalonia.Skia.Helpers;
 using SkiaSharp;
 
@@ -17,36 +16,94 @@ namespace Avalonia.Skia
     {
         private static readonly SKBitmapReleaseDelegate s_releaseDelegate = ReleaseProc;
         private readonly SKBitmap _bitmap;
-        private readonly object _lock = new object();
+        private readonly object _lock = new();
+        
+        /// <summary>
+        /// Create a WriteableBitmap from given stream.
+        /// </summary>
+        /// <param name="stream">Stream containing encoded data.</param>
+        public WriteableBitmapImpl(Stream stream)
+        {
+            using (var skiaStream = new SKManagedStream(stream))
+            using (var skData = SKData.Create(skiaStream))
+            {
+                _bitmap = SKBitmap.Decode(skData);
 
+                if (_bitmap == null)
+                {
+                    throw new ArgumentException("Unable to load bitmap from provided data");
+                }
+
+                PixelSize = new PixelSize(_bitmap.Width, _bitmap.Height);
+                Dpi = SkiaPlatform.DefaultDpi;
+            }
+        }
+
+        public WriteableBitmapImpl(Stream stream, int decodeSize, bool horizontal, BitmapInterpolationMode interpolationMode)
+        {
+            using (var skStream = new SKManagedStream(stream))
+            using (var skData = SKData.Create(skStream))
+            using (var codec = SKCodec.Create(skData))
+            {
+                var info = codec.Info;
+
+                // get the scale that is nearest to what we want (eg: jpg returned 512)
+                var supportedScale = codec.GetScaledDimensions(horizontal ? ((float)decodeSize / info.Width) : ((float)decodeSize / info.Height));
+
+                // decode the bitmap at the nearest size
+                var nearest = new SKImageInfo(supportedScale.Width, supportedScale.Height);
+                var bmp = SKBitmap.Decode(codec, nearest);
+
+                // now scale that to the size that we want
+                var realScale = horizontal ? ((double)info.Height / info.Width) : ((double)info.Width / info.Height);
+
+                SKImageInfo desired;
+
+
+                if (horizontal)
+                {
+                    desired = new SKImageInfo(decodeSize, (int)(realScale * decodeSize));
+                }
+                else
+                {
+                    desired = new SKImageInfo((int)(realScale * decodeSize), decodeSize);
+                }
+
+                if (bmp.Width != desired.Width || bmp.Height != desired.Height)
+                {
+                    var scaledBmp = bmp.Resize(desired, interpolationMode.ToSKFilterQuality());
+                    bmp.Dispose();
+                    bmp = scaledBmp;
+                }
+
+                _bitmap = bmp;
+
+                PixelSize = new PixelSize(bmp.Width, bmp.Height);
+                Dpi = SkiaPlatform.DefaultDpi;
+            }
+        }
+        
         /// <summary>
         /// Create new writeable bitmap.
         /// </summary>
         /// <param name="size">The size of the bitmap in device pixels.</param>
         /// <param name="dpi">The DPI of the bitmap.</param>
         /// <param name="format">The pixel format.</param>
-        public WriteableBitmapImpl(PixelSize size, Vector dpi, PixelFormat? format = null)
+        /// <param name="alphaFormat">The alpha format.</param>
+        public WriteableBitmapImpl(PixelSize size, Vector dpi, PixelFormat format, AlphaFormat alphaFormat)
         {
             PixelSize = size;
             Dpi = dpi;
 
-            var colorType = PixelFormatHelper.ResolveColorType(format);
-            
-            var runtimePlatform = AvaloniaLocator.Current?.GetService<IRuntimePlatform>();
-            
-            if (runtimePlatform != null)
-            {
-                _bitmap = new SKBitmap();
+            SKColorType colorType = format.ToSkColorType();
+            SKAlphaType alphaType = alphaFormat.ToSkAlphaType();
 
-                var nfo = new SKImageInfo(size.Width, size.Height, colorType, SKAlphaType.Premul);
-                var blob = runtimePlatform.AllocBlob(nfo.BytesSize);
+            _bitmap = new SKBitmap();
 
-                _bitmap.InstallPixels(nfo, blob.Address, nfo.RowBytes, s_releaseDelegate, blob);
-            }
-            else
-            {
-                _bitmap = new SKBitmap(size.Width, size.Height, colorType, SKAlphaType.Premul);
-            }
+            var nfo = new SKImageInfo(size.Width, size.Height, colorType, alphaType);
+            var blob = new UnmanagedBlob(nfo.BytesSize);
+
+            _bitmap.InstallPixels(nfo, blob.Address, nfo.RowBytes, s_releaseDelegate, blob);
 
             _bitmap.Erase(SKColor.Empty);
         }
@@ -66,28 +123,32 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public void Dispose()
+        public virtual void Dispose()
         {
             _bitmap.Dispose();
         }
 
         /// <inheritdoc />
-        public void Save(Stream stream)
+        public void Save(Stream stream, int? quality = null)
         {
             using (var image = GetSnapshot())
             {
-                ImageSavingHelper.SaveImage(image, stream);
+                ImageSavingHelper.SaveImage(image, stream, quality);
             }
         }
 
         /// <inheritdoc />
-        public void Save(string fileName)
+        public void Save(string fileName, int? quality = null)
         {
             using (var image = GetSnapshot())
             {
-                ImageSavingHelper.SaveImage(image, fileName);
+                ImageSavingHelper.SaveImage(image, fileName, quality);
             }
         }
+
+        public PixelFormat? Format => _bitmap.ColorType.ToAvalonia();
+
+        public AlphaFormat? AlphaFormat => _bitmap.AlphaType.ToAlphaFormat();
 
         /// <inheritdoc />
         public ILockedFramebuffer Lock() => new BitmapFramebuffer(this, _bitmap);
@@ -109,7 +170,7 @@ namespace Avalonia.Skia
         /// <param name="ctx">Blob.</param>
         private static void ReleaseProc(IntPtr address, object ctx)
         {
-            ((IUnmanagedBlob)ctx).Dispose();
+            ((UnmanagedBlob)ctx).Dispose();
         }
 
         /// <summary>
@@ -138,8 +199,8 @@ namespace Avalonia.Skia
                 _bitmap.NotifyPixelsChanged();
                 _parent.Version++;
                 Monitor.Exit(_parent._lock);
-                _bitmap = null;
-                _parent = null;
+                _bitmap = null!;
+                _parent = null!;
             }
             
             /// <inheritdoc />
@@ -152,8 +213,7 @@ namespace Avalonia.Skia
             public int RowBytes => _bitmap.RowBytes;
 
             /// <inheritdoc />
-            public Vector Dpi { get; } = SkiaPlatform.DefaultDpi;
-
+            public Vector Dpi => _parent.Dpi;
             /// <inheritdoc />
             public PixelFormat Format => _bitmap.ColorType.ToPixelFormat();
         }

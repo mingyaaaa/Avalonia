@@ -1,8 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Linq;
+using Avalonia.Platform;
 using SharpDX;
 using SharpDX.Direct2D1;
 using SharpDX.Mathematics.Interop;
@@ -10,7 +8,7 @@ using DWrite = SharpDX.DirectWrite;
 
 namespace Avalonia.Direct2D1
 {
-    public static class PrimitiveExtensions
+    internal static class PrimitiveExtensions
     {
         /// <summary>
         /// The value for which all absolute numbers smaller than are considered equal to zero.
@@ -92,14 +90,16 @@ namespace Avalonia.Direct2D1
                 return CapStyle.Triangle;
         }
 
-        public static Guid ToWic(this Platform.PixelFormat format)
+        public static Guid ToWic(this Platform.PixelFormat format, Platform.AlphaFormat alphaFormat)
         {
+            bool isPremul = alphaFormat == AlphaFormat.Premul;
+
             if (format == Platform.PixelFormat.Rgb565)
                 return SharpDX.WIC.PixelFormat.Format16bppBGR565;
             if (format == Platform.PixelFormat.Bgra8888)
-                return SharpDX.WIC.PixelFormat.Format32bppPBGRA;
+                return isPremul ? SharpDX.WIC.PixelFormat.Format32bppPBGRA : SharpDX.WIC.PixelFormat.Format32bppBGRA;
             if (format == Platform.PixelFormat.Rgba8888)
-                return SharpDX.WIC.PixelFormat.Format32bppPRGBA;
+                return isPremul ? SharpDX.WIC.PixelFormat.Format32bppPRGBA : SharpDX.WIC.PixelFormat.Format32bppRGBA;
             throw new ArgumentException("Unknown pixel format");
         }
 
@@ -109,9 +109,9 @@ namespace Avalonia.Direct2D1
         /// <param name="pen">The pen to convert.</param>
         /// <param name="renderTarget">The render target.</param>
         /// <returns>The Direct2D brush.</returns>
-        public static StrokeStyle ToDirect2DStrokeStyle(this Avalonia.Media.Pen pen, SharpDX.Direct2D1.RenderTarget renderTarget)
+        public static StrokeStyle ToDirect2DStrokeStyle(this Avalonia.Media.IPen pen, SharpDX.Direct2D1.RenderTarget renderTarget)
         {
-            return pen.ToDirect2DStrokeStyle(renderTarget.Factory);
+            return pen.ToDirect2DStrokeStyle(Direct2D1Platform.Direct2D1Factory);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ namespace Avalonia.Direct2D1
         /// <param name="pen">The pen to convert.</param>
         /// <param name="factory">The factory associated with this resource.</param>
         /// <returns>The Direct2D brush.</returns>
-        public static StrokeStyle ToDirect2DStrokeStyle(this Avalonia.Media.Pen pen, Factory factory)
+        public static StrokeStyle ToDirect2DStrokeStyle(this Avalonia.Media.IPen pen, Factory factory)
         {
             var d2dLineCap = pen.LineCap.ToDirect2D();
 

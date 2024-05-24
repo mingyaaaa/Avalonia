@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Linq;
 using Avalonia.Layout;
 using Xunit;
@@ -210,13 +207,13 @@ namespace Avalonia.Controls.UnitTests
                 new[]
                 {
                     new Rect(0, 0, 50, 10),
-                    new Rect(0, 10, 150, 10),
+                    new Rect(0, 10, 100, 10),
                     new Rect(25, 20, 50, 10),
-                    new Rect(-25, 30, 150, 10),
+                    new Rect(0, 30, 100, 10),
                     new Rect(50, 40, 50, 10),
-                    new Rect(-50, 50, 150, 10),
+                    new Rect(0, 50, 100, 10),
                     new Rect(0, 60, 100, 10),
-                    new Rect(0, 70, 150, 10),
+                    new Rect(0, 70, 100, 10),
 
                 }, bounds);
         }
@@ -283,13 +280,13 @@ namespace Avalonia.Controls.UnitTests
                 new[]
                 {
                     new Rect(0, 0, 10, 50),
-                    new Rect(10, 0, 10, 150),
+                    new Rect(10, 0, 10, 100),
                     new Rect(20, 25, 10, 50),
-                    new Rect(30, -25, 10, 150),
+                    new Rect(30, 0, 10, 100),
                     new Rect(40, 50, 10, 50),
-                    new Rect(50, -50, 10, 150),
+                    new Rect(50, 0, 10, 100),
                     new Rect(60, 0, 10, 100),
-                    new Rect(70, 0, 10, 150),
+                    new Rect(70, 0, 10, 100),
                 }, bounds);
         }
 
@@ -330,6 +327,31 @@ namespace Avalonia.Controls.UnitTests
             Size sizeWithThreeChildren = targetThreeChildrenOneInvisble.Bounds.Size;
 
             Assert.Equal(sizeWithTwoChildren, sizeWithThreeChildren);
+        }
+
+        [Theory]
+        [InlineData(Orientation.Horizontal)]
+        [InlineData(Orientation.Vertical)]
+        public void Only_Arrange_Visible_Children(Orientation orientation)
+        {
+
+            var hiddenPanel = new Panel { Width = 10, Height = 10, IsVisible = false };
+            var panel = new Panel { Width = 10, Height = 10 };
+
+            var target = new StackPanel
+            {
+                Spacing = 40,
+                Orientation = orientation,
+                Children =
+                {
+                    hiddenPanel,
+                    panel
+                }
+            };
+
+            target.Measure(Size.Infinity);
+            target.Arrange(new Rect(target.DesiredSize));
+            Assert.Equal(new Rect(0, 0, 10, 10), panel.Bounds);
         }
 
         private class TestControl : Control

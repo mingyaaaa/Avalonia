@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 
 namespace Avalonia.Metadata
@@ -8,8 +5,8 @@ namespace Avalonia.Metadata
     /// <summary>
     /// Indicates that the property depends on the value of another property in markup.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Property)]
-    public class DependsOnAttribute : Attribute
+    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Method, Inherited = true, AllowMultiple = true)]
+    public sealed class DependsOnAttribute : Attribute
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="DependsOnAttribute"/> class.

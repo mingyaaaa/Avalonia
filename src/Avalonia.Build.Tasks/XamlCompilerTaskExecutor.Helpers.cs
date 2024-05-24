@@ -1,11 +1,14 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using Avalonia.Platform.Internal;
 using Avalonia.Utilities;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
-using XamlIl.TypeSystem;
+using XamlX.TypeSystem;
 
 namespace Avalonia.Build.Tasks
 {
@@ -24,38 +27,6 @@ namespace Avalonia.Build.Tasks
             string Name { get; }
             IEnumerable<IResource> Resources { get; }
         }
-        
-        class EmbeddedResources : IResourceGroup
-        {
-            private readonly AssemblyDefinition _asm;
-            public string Name => "EmbeddedResource";
-
-            public IEnumerable<IResource> Resources => _asm.MainModule.Resources.OfType<EmbeddedResource>()
-                .Select(r => new WrappedResource(_asm, r)).ToList();
-
-            public EmbeddedResources(AssemblyDefinition asm)
-            {
-                _asm = asm;
-            }
-            class WrappedResource : IResource
-            {
-                private readonly AssemblyDefinition _asm;
-                private readonly EmbeddedResource _res;
-
-                public WrappedResource(AssemblyDefinition asm, EmbeddedResource res)
-                {
-                    _asm = asm;
-                    _res = res;
-                }
-
-                public string Uri => $"resm:{Name}?assembly={_asm.Name.Name}";
-                public string Name => _res.Name;
-                public string FilePath => Name;
-                public byte[] FileContents => _res.GetResourceData();
-
-                public void Remove() => _asm.MainModule.Resources.Remove(_res);
-            }
-        }
 
         class AvaloniaResources : IResourceGroup
         {
@@ -66,13 +37,13 @@ namespace Avalonia.Build.Tasks
             {
                 _asm = asm;
                 _embedded = ((EmbeddedResource)asm.MainModule.Resources.FirstOrDefault(r =>
-                    r.ResourceType == ResourceType.Embedded && r.Name == "!AvaloniaResources"));
+                    r.ResourceType == ResourceType.Embedded && r.Name == Constants.AvaloniaResourceName));
                 if (_embedded == null)
                     return;
                 using (var stream = _embedded.GetResourceStream())
                 {
                     var br = new BinaryReader(stream);
-                    var index = AvaloniaResourcesIndexReaderWriter.Read(new MemoryStream(br.ReadBytes(br.ReadInt32())));
+                    var index = AvaloniaResourcesIndexReaderWriter.ReadIndex(new MemoryStream(br.ReadBytes(br.ReadInt32())));
                     var baseOffset = stream.Position;
                     foreach (var e in index)
                     {
@@ -93,9 +64,20 @@ namespace Avalonia.Build.Tasks
                 if (_resources.Count == 0)
                     return;
 
-                _embedded = new EmbeddedResource("!AvaloniaResources", ManifestResourceAttributes.Public,
-                    AvaloniaResourcesIndexReaderWriter.Create(_resources.ToDictionary(x => x.Key,
-                        x => x.Value.FileContents)));
+                var output = new MemoryStream();
+
+                AvaloniaResourcesIndexReaderWriter.WriteResources(
+                    output,
+                    _resources.Select(x => new AvaloniaResourcesEntry
+                    {
+                        Path = x.Key,
+                        Size = x.Value.FileContents.Length,
+                        SystemPath = x.Value.FilePath,
+                        Open = () => new MemoryStream(x.Value.FileContents)
+                    }).ToList());
+
+                output.Position = 0L;
+                _embedded = new EmbeddedResource(Constants.AvaloniaResourceName, ManifestResourceAttributes.Public, output);
                 _asm.MainModule.Resources.Add(_embedded);
             }
 

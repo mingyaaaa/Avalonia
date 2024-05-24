@@ -1,11 +1,13 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
+using System;
+using Avalonia.Diagnostics;
+using Avalonia.Metadata;
 
 namespace Avalonia.Data
 {
     /// <summary>
     /// Holds a binding that can be applied to a property on an object.
     /// </summary>
+    [NotClientImplementable]
     public interface IBinding
     {
         /// <summary>
@@ -23,10 +25,11 @@ namespace Avalonia.Data
         /// <returns>
         /// A <see cref="InstancedBinding"/> or null if the binding could not be resolved.
         /// </returns>
-        InstancedBinding Initiate(
-            IAvaloniaObject target, 
-            AvaloniaProperty targetProperty,
-            object anchor = null,
+        [Obsolete(ObsoletionMessages.MayBeRemovedInAvalonia12)]
+        InstancedBinding? Initiate(
+            AvaloniaObject target, 
+            AvaloniaProperty? targetProperty,
+            object? anchor = null,
             bool enableDataValidation = false);
     }
 }

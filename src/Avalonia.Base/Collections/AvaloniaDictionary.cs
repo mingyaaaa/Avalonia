@@ -1,11 +1,9 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Avalonia.Data.Core;
 
@@ -16,10 +14,7 @@ namespace Avalonia.Collections
     /// </summary>
     /// <typeparam name="TKey">The type of the dictionary key.</typeparam>
     /// <typeparam name="TValue">The type of the dictionary value.</typeparam>
-    public class AvaloniaDictionary<TKey, TValue> : IDictionary<TKey, TValue>,
-        IDictionary,
-        INotifyCollectionChanged,
-        INotifyPropertyChanged
+    public class AvaloniaDictionary<TKey, TValue> : IAvaloniaDictionary<TKey, TValue> where TKey : notnull
     {
         private Dictionary<TKey, TValue> _inner;
 
@@ -30,16 +25,24 @@ namespace Avalonia.Collections
         {
             _inner = new Dictionary<TKey, TValue>();
         }
+        
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AvaloniaDictionary{TKey, TValue}"/> class.
+        /// </summary>
+        public AvaloniaDictionary(int capacity)
+        {
+            _inner = new Dictionary<TKey, TValue>(capacity);
+        }
 
         /// <summary>
         /// Occurs when the collection changes.
         /// </summary>
-        public event NotifyCollectionChangedEventHandler CollectionChanged;
+        public event NotifyCollectionChangedEventHandler? CollectionChanged;
 
         /// <summary>
         /// Raised when a property on the collection changes.
         /// </summary>
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
         /// <inheritdoc/>
         public int Count => _inner.Count;
@@ -63,6 +66,10 @@ namespace Avalonia.Collections
 
         object ICollection.SyncRoot => ((IDictionary)_inner).SyncRoot;
 
+        IEnumerable<TKey> IReadOnlyDictionary<TKey, TValue>.Keys => _inner.Keys;
+
+        IEnumerable<TValue> IReadOnlyDictionary<TKey, TValue>.Values => _inner.Values;
+
         /// <summary>
         /// Gets or sets the named resource.
         /// </summary>
@@ -77,20 +84,19 @@ namespace Avalonia.Collections
 
             set
             {
-                TValue old;
-                bool replace = _inner.TryGetValue(key, out old);
+                bool replace = _inner.TryGetValue(key, out var old);
                 _inner[key] = value;
 
                 if (replace)
                 {
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"Item[{key}]"));
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"{CommonPropertyNames.IndexerName}[{key}]"));
 
                     if (CollectionChanged != null)
                     {
                         var e = new NotifyCollectionChangedEventArgs(
                             NotifyCollectionChangedAction.Replace,
                             new KeyValuePair<TKey, TValue>(key, value),
-                            new KeyValuePair<TKey, TValue>(key, old));
+                            new KeyValuePair<TKey, TValue>(key, old!));
                         CollectionChanged(this, e);
                     }
                 }
@@ -101,7 +107,7 @@ namespace Avalonia.Collections
             }
         }
 
-        object IDictionary.this[object key] { get => ((IDictionary)_inner)[key]; set => ((IDictionary)_inner)[key] = value; }
+        object? IDictionary.this[object key] { get => ((IDictionary)_inner)[key]; set => ((IDictionary)_inner)[key] = value; }
 
         /// <inheritdoc/>
         public void Add(TKey key, TValue value)
@@ -125,7 +131,7 @@ namespace Avalonia.Collections
             {
                 var e = new NotifyCollectionChangedEventArgs(
                     NotifyCollectionChangedAction.Remove,
-                    old.ToList(),
+                    old.ToArray(),
                     -1);
                 CollectionChanged(this, e);
             }
@@ -146,10 +152,11 @@ namespace Avalonia.Collections
         /// <inheritdoc/>
         public bool Remove(TKey key)
         {
-            if (_inner.TryGetValue(key, out TValue value))
+            if (_inner.TryGetValue(key, out var value))
             {
+                _inner.Remove(key);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"Item[{key}]"));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"{CommonPropertyNames.IndexerName}[{key}]"));
 
                 if (CollectionChanged != null)
                 {
@@ -169,8 +176,7 @@ namespace Avalonia.Collections
         }
 
         /// <inheritdoc/>
-        public bool TryGetValue(TKey key, out TValue value) => _inner.TryGetValue(key, out value);
-
+        public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value) => _inner.TryGetValue(key, out value);
         /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => _inner.GetEnumerator();
 
@@ -196,7 +202,7 @@ namespace Avalonia.Collections
         }
 
         /// <inheritdoc/>
-        void IDictionary.Add(object key, object value) => Add((TKey)key, (TValue)value);
+        void IDictionary.Add(object key, object? value) => Add((TKey)key, (TValue)value!);
 
         /// <inheritdoc/>
         bool IDictionary.Contains(object key) => ((IDictionary) _inner).Contains(key);
@@ -210,7 +216,7 @@ namespace Avalonia.Collections
         private void NotifyAdd(TKey key, TValue value)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"Item[{key}]"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"{CommonPropertyNames.IndexerName}[{key}]"));
             
 
             if (CollectionChanged != null)

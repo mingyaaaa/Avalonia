@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Controls;
 using Avalonia.Media;
 using System;
@@ -74,6 +71,68 @@ namespace Avalonia.Direct2D1.RenderTests.Media
 
             await RenderToFile(target);
             CompareImages();
+        }
+
+        [Fact]
+        public async Task LinearGradientBrush_DrawingContext()
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop { Color = Colors.Red, Offset = 0 },
+                    new GradientStop { Color = Colors.Blue, Offset = 1 }
+                }
+            };
+
+            Decorator target = new Decorator
+            {
+                Width = 200,
+                Height = 200,
+                Child = new DrawnControl(c =>
+                {
+                    c.DrawRectangle(brush, null, new Rect(0, 0, 100, 100));
+
+                    using (c.PushTransform(Matrix.CreateTranslation(100, 100)))
+                        c.DrawRectangle(brush, null, new Rect(0, 0, 100, 100));
+                }),
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        private class DrawnControl : Control
+        {
+            private readonly Action<DrawingContext> _render;
+            public DrawnControl(Action<DrawingContext> render) => _render = render;
+            public override void Render(DrawingContext context) => _render(context);
+        }
+
+        [Theory,
+            InlineData(false),
+            InlineData(true)
+        ]
+        public async Task LinearGradientBrushIsProperlyMapped(bool relative)
+        {
+            var brush = new LinearGradientBrush
+            {
+                StartPoint = relative ? new RelativePoint(0, 0, RelativeUnit.Relative) : new RelativePoint(50,0, RelativeUnit.Absolute),
+                EndPoint = relative ? new RelativePoint(1, 1, RelativeUnit.Relative) : new RelativePoint(150,0, RelativeUnit.Absolute),
+                GradientStops =
+                {
+                    new GradientStop { Color = Colors.Red, Offset = 0 },
+                    new GradientStop { Color = Colors.Blue, Offset = 1 }
+                },
+                SpreadMethod = GradientSpreadMethod.Repeat
+            };
+            
+            var testName =
+                $"{nameof(LinearGradientBrushIsProperlyMapped)}_{brush.StartPoint.Unit}";
+            await RenderToFile(new RelativePointTestPrimitivesHelper(brush), testName);
+            CompareImages(testName);
         }
     }
 }

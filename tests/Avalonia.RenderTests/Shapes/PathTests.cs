@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
@@ -373,6 +370,114 @@ namespace Avalonia.Direct2D1.RenderTests.Shapes
                         Rect = new Rect(50, 50, 100, 100),
                         Transform = new RotateTransform(45),
                     }
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+        
+        [Fact]
+        public async Task BeginFigure_IsFilled_Is_Respected()
+        {
+            var target = new Border
+            {
+                Width = 200,
+                Height = 200,
+                Background = Brushes.White,
+                Child = new Path
+                {
+                    Fill = Brushes.Black,
+                    Stroke = Brushes.Black,
+                    StrokeThickness = 10,
+                    Data = new PathGeometry()
+                    {
+                        Figures = new()
+                        {
+                            new PathFigure
+                            {
+                                IsFilled = false, IsClosed = false,
+                                StartPoint = new Point(170,170),
+                                Segments = new ()
+                                {
+                                    new LineSegment
+                                    {
+                                        Point = new Point(60, 170)
+                                    },
+                                    new LineSegment
+                                    {
+                                        Point = new Point(60, 60)
+                                    }
+                                }
+                            },
+                            new PathFigure
+                            {
+                                IsFilled = true, IsClosed = true,
+                                StartPoint = new Point(60,20),
+                                Segments = new ()
+                                {
+                                    new LineSegment
+                                    {
+                                        Point = new Point(20, 60)
+                                    },
+                                    new LineSegment
+                                    {
+                                        Point = new Point(100, 60)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        [Fact]
+        public async Task GetWidenedPathGeometry_Line()
+        {
+            var pen = new Pen(Brushes.Black, 10);
+            var geometry = StreamGeometry.Parse("M 0,0 L 180,180").GetWidenedGeometry(pen);
+
+            Decorator target = new Decorator
+            {
+                Width = 200,
+                Height = 200,
+                Child = new Path
+                {
+                    Stroke = Brushes.Red,
+                    StrokeThickness = 1,
+                    Fill = Brushes.Green,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Data = geometry,
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        [Fact]
+        public async Task GetWidenedPathGeometry_Line_Dash()
+        {
+            var pen = new Pen(Brushes.Black, 10, DashStyle.Dash);
+            var geometry = StreamGeometry.Parse("M 0,0 L 180,180").GetWidenedGeometry(pen);
+
+            Decorator target = new Decorator
+            {
+                Width = 200,
+                Height = 200,
+                Child = new Path
+                {
+                    Stroke = Brushes.Red,
+                    StrokeThickness = 1,
+                    Fill = Brushes.Green,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Data = geometry,
                 }
             };
 

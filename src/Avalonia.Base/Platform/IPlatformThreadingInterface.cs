@@ -1,8 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Threading;
+using Avalonia.Metadata;
 using Avalonia.Threading;
 
 namespace Avalonia.Platform
@@ -10,10 +8,9 @@ namespace Avalonia.Platform
     /// <summary>
     /// Provides platform-specific services relating to threading.
     /// </summary>
+    [PrivateApi]
     public interface IPlatformThreadingInterface
     {
-        void RunLoop(CancellationToken cancellationToken);
-
         /// <summary>
         /// Starts a timer.
         /// </summary>
@@ -27,6 +24,6 @@ namespace Avalonia.Platform
 
         bool CurrentThreadIsLoopThread { get; }
 
-        event Action<DispatcherPriority?> Signaled;
+        event Action<DispatcherPriority?>? Signaled;
     }
 }

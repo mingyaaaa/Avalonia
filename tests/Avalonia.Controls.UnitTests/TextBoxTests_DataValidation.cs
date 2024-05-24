@@ -1,7 +1,4 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -9,7 +6,11 @@ using System.Linq;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Data.Core;
+using Avalonia.Headless;
 using Avalonia.Markup.Data;
+using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Markup.Xaml.MarkupExtensions.CompiledBindings;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Moq;
@@ -58,7 +59,7 @@ namespace Avalonia.Controls.UnitTests
                 Assert.Null(DataValidationErrors.GetErrors(target));
                 target.Text = "20";
 
-                IEnumerable<Exception> errors = DataValidationErrors.GetErrors(target);
+                IEnumerable<object> errors = DataValidationErrors.GetErrors(target);
                 Assert.Single(errors);
                 Assert.IsType<InvalidOperationException>(errors.Single());
                 target.Text = "1";
@@ -66,6 +67,30 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
+        [Fact]
+        public void Setter_Exceptions_Should_Be_Converter_If_Error_Converter_Set()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    DataContext = new ExceptionTest(),
+                    [!TextBox.TextProperty] = new Binding(nameof(ExceptionTest.LessThan10), BindingMode.TwoWay),
+                    Template = CreateTemplate()  
+                };
+                DataValidationErrors.SetErrorConverter(target, err => "Error: " + err);
+
+                target.ApplyTemplate();
+
+                target.Text = "20";
+
+                IEnumerable<object> errors = DataValidationErrors.GetErrors(target);
+                Assert.Single(errors);
+                var error = Assert.IsType<string>(errors.Single());
+                Assert.StartsWith("Error: ", error);
+            }
+        }
+        
         [Fact]
         public void Setter_Exceptions_Should_Set_DataValidationErrors_HasErrors()
         {
@@ -88,12 +113,48 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
-        private static TestServices Services => TestServices.MockThreadingInterface.With(
-            standardCursorFactory: Mock.Of<IStandardCursorFactory>());
-
-        private IControlTemplate CreateTemplate()
+        [Fact]
+        public void CompiledBindings_TypeConverter_Exceptions_Should_Set_DataValidationErrors_HasErrors()
         {
-            return new FuncControlTemplate<TextBox>(control =>
+            var path = new CompiledBindingPathBuilder()
+            .Property(
+                new ClrPropertyInfo(
+                    nameof(ExceptionTest.LessThan10),
+                    target => ((ExceptionTest)target).LessThan10,
+                    (target, value) => ((ExceptionTest)target).LessThan10 = (int)value,
+                    typeof(int)),
+                PropertyInfoAccessorFactory.CreateInpcPropertyAccessor)
+            .Build();
+
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    DataContext = new ExceptionTest(),
+                    [!TextBox.TextProperty] = new CompiledBindingExtension
+                    {
+                        Source = new ExceptionTest(),
+                        Path = path,
+                        Mode = BindingMode.TwoWay
+                    },
+                    Template = CreateTemplate(),
+                };
+
+                target.ApplyTemplate();
+
+                target.Text = "a";
+                Assert.True(DataValidationErrors.GetHasErrors(target));
+            }
+        }
+
+        private static TestServices Services => TestServices.MockThreadingInterface.With(
+            standardCursorFactory: Mock.Of<ICursorFactory>(),
+            textShaperImpl: new HeadlessTextShaperStub(),
+            fontManagerImpl: new HeadlessFontManagerStub());
+
+        private static IControlTemplate CreateTemplate()
+        {
+            return new FuncControlTemplate<TextBox>((control, scope) =>
                 new TextPresenter
                 {
                     Name = "PART_TextPresenter",
@@ -101,10 +162,10 @@ namespace Avalonia.Controls.UnitTests
                     {
                         Path = "Text",
                         Mode = BindingMode.TwoWay,
-                        Priority = BindingPriority.TemplatedParent,
+                        Priority = BindingPriority.Template,
                         RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
                     },
-                });
+                }.RegisterInNameScope(scope));
         }
 
         private class ExceptionTest

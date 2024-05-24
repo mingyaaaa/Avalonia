@@ -1,27 +1,16 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using Nuke.Common;
 using Nuke.Common.IO;
 using Numerge;
+using static Serilog.Log;
 
 public partial class Build
 {
-    static void Information(string info)
-    {
-        Logger.Info(info);
-    }
+    private void Zip(AbsolutePath target, params string[] paths) => Zip(target, paths.AsEnumerable());
 
-    static void Information(string info, params object[] args)
-    {
-        Logger.Info(info, args);
-    }
-
-    private void Zip(PathConstruction.AbsolutePath target, params string[] paths) => Zip(target, paths.AsEnumerable());
-
-    private void Zip(PathConstruction.AbsolutePath target, IEnumerable<string> paths)
+    private void Zip(AbsolutePath target, IEnumerable<string> paths)
     {
         var targetPath = target.ToString();
         bool finished = false, atLeastOneFileAdded = false;
@@ -38,13 +27,13 @@ public partial class Build
                         fileStream.CopyTo(entryStream);
                     atLeastOneFileAdded = true;
                 }
-                
+
                 foreach (var path in paths)
                 {
                     if (Directory.Exists(path))
                     {
                         var dirInfo = new DirectoryInfo(path);
-                        var rootPath = Path.GetDirectoryName(dirInfo.FullName);
+                        var rootPath = Path.GetDirectoryName(dirInfo.FullName)!;
                         foreach(var fsEntry in dirInfo.EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
                         {
                             if (fsEntry is FileInfo)
@@ -64,7 +53,7 @@ public partial class Build
 
             finished = true;
         }
-        finally 
+        finally
         {
             try
             {
@@ -83,11 +72,11 @@ public partial class Build
         public void Log(NumergeLogLevel level, string message)
         {
             if(level == NumergeLogLevel.Error)
-                Logger.Error(message);
+                Error(message);
             else if (level == NumergeLogLevel.Warning)
-                Logger.Warn(message);
+                Warning(message);
             else
-                Logger.Info(message);
+                Information(message);
         }
     }
 }

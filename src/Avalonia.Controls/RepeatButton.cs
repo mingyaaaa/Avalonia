@@ -4,29 +4,32 @@ using Avalonia.Threading;
 
 namespace Avalonia.Controls
 {
+    /// <summary>
+    /// Represents a control that raises its <see cref="Button.Click"/> event repeatedly when it is pressed and held.
+    /// </summary>
     public class RepeatButton : Button
     {
         /// <summary>
         /// Defines the <see cref="Interval"/> property.
         /// </summary>
         public static readonly StyledProperty<int> IntervalProperty =
-            AvaloniaProperty.Register<Button, int>(nameof(Interval), 100);
+            AvaloniaProperty.Register<RepeatButton, int>(nameof(Interval), 100);
 
         /// <summary>
         /// Defines the <see cref="Delay"/> property.
         /// </summary>
         public static readonly StyledProperty<int> DelayProperty =
-            AvaloniaProperty.Register<Button, int>(nameof(Delay), 300);
+            AvaloniaProperty.Register<RepeatButton, int>(nameof(Delay), 300);
 
-        private DispatcherTimer _repeatTimer;
+        private DispatcherTimer? _repeatTimer;
 
         /// <summary>
         /// Gets or sets the amount of time, in milliseconds, of repeating clicks.
         /// </summary>
         public int Interval
         {
-            get { return GetValue(IntervalProperty); }
-            set { SetValue(IntervalProperty, value); }
+            get => GetValue(IntervalProperty);
+            set => SetValue(IntervalProperty, value);
         }
 
         /// <summary>
@@ -34,8 +37,8 @@ namespace Avalonia.Controls
         /// </summary>
         public int Delay
         {
-            get { return GetValue(DelayProperty); }
-            set { SetValue(DelayProperty, value); }
+            get => GetValue(DelayProperty);
+            set => SetValue(DelayProperty, value);
         }
 
         private void StartTimer()
@@ -52,10 +55,10 @@ namespace Avalonia.Controls
             _repeatTimer.Start();
         }
 
-        private void RepeatTimerOnTick(object sender, EventArgs e)
+        private void RepeatTimerOnTick(object? sender, EventArgs e)
         {
             var interval = TimeSpan.FromMilliseconds(Interval);
-            if (_repeatTimer.Interval != interval)
+            if (_repeatTimer!.Interval != interval)
             {
                 _repeatTimer.Interval = interval;
             }
@@ -65,6 +68,16 @@ namespace Avalonia.Controls
         private void StopTimer()
         {
             _repeatTimer?.Stop();
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == IsPressedProperty && change.GetNewValue<bool>() == false)
+            {
+                StopTimer();
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -88,7 +101,7 @@ namespace Avalonia.Controls
         {
             base.OnPointerPressed(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
                 StartTimer();
             }
@@ -98,7 +111,7 @@ namespace Avalonia.Controls
         {
             base.OnPointerReleased(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.InitialPressMouseButton == MouseButton.Left)
             {
                 StopTimer();
             }

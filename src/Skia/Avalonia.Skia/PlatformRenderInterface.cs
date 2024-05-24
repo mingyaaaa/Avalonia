@@ -1,14 +1,16 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Media;
 using Avalonia.OpenGL;
 using Avalonia.Platform;
+using Avalonia.Media.Imaging;
+using Avalonia.Skia.Vulkan;
+using Avalonia.Vulkan;
 using SkiaSharp;
+using Avalonia.Media.TextFormatting;
+using Avalonia.Metal;
+using Avalonia.Skia.Metal;
 
 namespace Avalonia.Skia
 {
@@ -17,48 +19,43 @@ namespace Avalonia.Skia
     /// </summary>
     internal class PlatformRenderInterface : IPlatformRenderInterface
     {
-        private readonly ICustomSkiaGpu _customSkiaGpu;
+        private readonly long? _maxResourceBytes;
 
-        private GRContext GrContext { get; }
-
-        public IEnumerable<string> InstalledFontNames => SKFontManager.Default.FontFamilies;
-
-        public PlatformRenderInterface(ICustomSkiaGpu customSkiaGpu)
+        public PlatformRenderInterface(long? maxResourceBytes = null)
         {
-            if (customSkiaGpu != null)
-            {
-                _customSkiaGpu = customSkiaGpu;
-
-                GrContext = _customSkiaGpu.GrContext;
-
-                return;
-            }
-
-            var gl = AvaloniaLocator.Current.GetService<IWindowingPlatformGlFeature>();
-            if (gl != null)
-            {
-                var display = gl.ImmediateContext.Display;
-                gl.ImmediateContext.MakeCurrent();
-                using (var iface = display.Type == GlDisplayType.OpenGL2
-                    ? GRGlInterface.AssembleGlInterface((_, proc) => display.GlInterface.GetProcAddress(proc))
-                    : GRGlInterface.AssembleGlesInterface((_, proc) => display.GlInterface.GetProcAddress(proc)))
-                {
-                    GrContext = GRContext.Create(GRBackend.OpenGL, iface);
-                }
-            }
+            _maxResourceBytes = maxResourceBytes;
+            DefaultPixelFormat = SKImageInfo.PlatformColorType.ToPixelFormat();
         }
 
-        /// <inheritdoc />
-        public IFormattedTextImpl CreateFormattedText(
-            string text,
-            Typeface typeface,
-            TextAlignment textAlignment,
-            TextWrapping wrapping,
-            Size constraint,
-            IReadOnlyList<FormattedTextStyleSpan> spans)
+
+        public IPlatformRenderInterfaceContext CreateBackendContext(IPlatformGraphicsContext? graphicsContext)
         {
-            return new FormattedTextImpl(text, typeface, textAlignment, wrapping, constraint, spans);
+            if (graphicsContext == null)
+                return new SkiaContext(null);
+            if (graphicsContext is ISkiaGpu skiaGpu)
+                return new SkiaContext(skiaGpu);
+            if (graphicsContext is IGlContext gl)
+                return new SkiaContext(new GlSkiaGpu(gl, _maxResourceBytes));
+            if (graphicsContext is IMetalDevice metal)
+                return new SkiaContext(new SkiaMetalGpu(metal, _maxResourceBytes));
+            if (graphicsContext is IVulkanPlatformGraphicsContext vulkanContext)
+                return new SkiaContext(new VulkanSkiaGpu(vulkanContext, _maxResourceBytes));
+            throw new ArgumentException("Graphics context of type is not supported");
         }
+
+        public bool SupportsIndividualRoundRects => true;
+
+        public AlphaFormat DefaultAlphaFormat => AlphaFormat.Premul;
+
+        public PixelFormat DefaultPixelFormat { get; }
+
+        public bool IsSupportedBitmapPixelFormat(PixelFormat format) =>
+            format == PixelFormats.Rgb565
+            || format == PixelFormats.Bgra8888
+            || format == PixelFormats.Rgba8888;
+
+        public bool SupportsRegions => true;
+        public IPlatformRenderInterfaceRegion CreateRegion() => new SkiaRegionImpl();
 
         public IGeometryImpl CreateEllipseGeometry(Rect rect) => new EllipseGeometryImpl(rect);
 
@@ -72,10 +69,47 @@ namespace Avalonia.Skia
             return new StreamGeometryImpl();
         }
 
-        /// <inheritdoc />
-        public IBitmapImpl LoadBitmap(Stream stream)
+        public IGeometryImpl CreateGeometryGroup(FillRule fillRule, IReadOnlyList<IGeometryImpl> children)
         {
-            return new ImmutableBitmap(stream);
+            return new GeometryGroupImpl(fillRule, children);
+        }
+
+        public IGeometryImpl CreateCombinedGeometry(GeometryCombineMode combineMode, IGeometryImpl g1, IGeometryImpl g2)
+        {
+            return CombinedGeometryImpl.ForceCreate(combineMode, g1, g2);
+        }
+
+        public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)
+        {
+            if (glyphRun.GlyphTypeface is not GlyphTypefaceImpl glyphTypeface)
+            {
+                throw new InvalidOperationException("PlatformImpl can't be null.");
+            }
+
+            var fontRenderingEmSize = (float)glyphRun.FontRenderingEmSize;
+
+            using var skFont = glyphTypeface.CreateSKFont(fontRenderingEmSize);
+
+            skFont.Hinting = SKFontHinting.None;
+
+            SKPath path = new SKPath();
+
+            var (currentX, currentY) = glyphRun.BaselineOrigin;
+
+            for (var i = 0; i < glyphRun.GlyphInfos.Count; i++)
+            {
+                var glyph = glyphRun.GlyphInfos[i].GlyphIndex;
+                var glyphPath = skFont.GetGlyphPath(glyph);
+
+                if (glyphPath is not null && !glyphPath.IsEmpty)
+                {
+                    path.AddPath(glyphPath, (float)currentX, (float)currentY);
+                }
+
+                currentX += glyphRun.GlyphInfos[i].GlyphAdvance;
+            }
+
+            return new StreamGeometryImpl(path, path);
         }
 
         /// <inheritdoc />
@@ -88,9 +122,65 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public IBitmapImpl LoadBitmap(PixelFormat format, IntPtr data, PixelSize size, Vector dpi, int stride)
+        public IBitmapImpl LoadBitmap(Stream stream)
         {
-            return new ImmutableBitmap(size, dpi, stride, format, data);
+            return new ImmutableBitmap(stream);
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmapToWidth(Stream stream, int width,
+            BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new WriteableBitmapImpl(stream, width, true, interpolationMode);
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmapToHeight(Stream stream, int height,
+            BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new WriteableBitmapImpl(stream, height, false, interpolationMode);
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmap(string fileName)
+        {
+            using (var stream = File.OpenRead(fileName))
+            {
+                return LoadWriteableBitmap(stream);
+            }
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmap(Stream stream)
+        {
+            return new WriteableBitmapImpl(stream);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmap(PixelFormat format, AlphaFormat alphaFormat, IntPtr data, PixelSize size, Vector dpi, int stride)
+        {
+            return new ImmutableBitmap(size, dpi, stride, format, alphaFormat, data);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new ImmutableBitmap(stream, width, true, interpolationMode);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmapToHeight(Stream stream, int height, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new ImmutableBitmap(stream, height, false, interpolationMode);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl ResizeBitmap(IBitmapImpl bitmapImpl, PixelSize destinationSize, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            if (bitmapImpl is ImmutableBitmap ibmp)
+            {
+                return new ImmutableBitmap(ibmp, destinationSize, interpolationMode);
+            }
+            else
+            {
+                throw new Exception("Invalid source bitmap type.");
+            }
         }
 
         /// <inheritdoc />
@@ -106,50 +196,19 @@ namespace Avalonia.Skia
                 throw new ArgumentException("Height can't be less than 1", nameof(size));
             }
 
-            var createInfo = new SurfaceRenderTarget.CreateInfo
-            {
-                Width = size.Width,
-                Height = size.Height,
-                Dpi = dpi,
-                DisableTextLcdRendering = false
-            };
-
-            return new SurfaceRenderTarget(createInfo);
+            return new RenderTargetBitmapImpl(size, dpi);
         }
 
         /// <inheritdoc />
-        public IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces)
+        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat format, AlphaFormat alphaFormat)
         {
-            if (_customSkiaGpu != null)
-            {
-                ICustomSkiaRenderTarget customRenderTarget = _customSkiaGpu.TryCreateRenderTarget(surfaces);
-
-                if (customRenderTarget != null)
-                {
-                    return new CustomRenderTarget(customRenderTarget);
-                }
-            }
-
-            foreach (var surface in surfaces)
-            {
-                if (surface is IGlPlatformSurface glSurface && GrContext != null)
-                {
-                    return new GlRenderTarget(GrContext, glSurface);
-                }
-                if (surface is IFramebufferPlatformSurface framebufferSurface)
-                {
-                    return new FramebufferRenderTarget(framebufferSurface);
-                }
-            }
-
-            throw new NotSupportedException(
-                "Don't know how to create a Skia render target from any of provided surfaces");
+            return new WriteableBitmapImpl(size, dpi, format, alphaFormat);
         }
 
-        /// <inheritdoc />
-        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat? format = null)
+        public IGlyphRunImpl CreateGlyphRun(IGlyphTypeface glyphTypeface, double fontRenderingEmSize, 
+            IReadOnlyList<GlyphInfo> glyphInfos, Point baselineOrigin)
         {
-            return new WriteableBitmapImpl(size, dpi, format);
+            return new GlyphRunImpl(glyphTypeface, fontRenderingEmSize, glyphInfos, baselineOrigin);
         }
     }
 }

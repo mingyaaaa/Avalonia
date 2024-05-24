@@ -1,30 +1,28 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Linq;
-using System.Reactive;
-using System.Reactive.Linq;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using Avalonia.Collections.Pooled;
+using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Data.Core;
-using Avalonia.LogicalTree;
+using Avalonia.Data.Core.ExpressionNodes;
+using Avalonia.Diagnostics;
 using Avalonia.Markup.Parsers;
-using Avalonia.Reactive;
-using Avalonia.VisualTree;
+using Avalonia.Utilities;
 
 namespace Avalonia.Data
 {
     /// <summary>
     /// A XAML binding.
     /// </summary>
-    public class Binding : IBinding
+    [RequiresUnreferencedCode(TrimmingMessages.ReflectionBindingRequiresUnreferencedCodeMessage)]
+    public class Binding : BindingBase
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="Binding"/> class.
         /// </summary>
         public Binding()
         {
-            FallbackValue = AvaloniaProperty.UnsetValue;
         }
 
         /// <summary>
@@ -33,36 +31,25 @@ namespace Avalonia.Data
         /// <param name="path">The binding path.</param>
         /// <param name="mode">The binding mode.</param>
         public Binding(string path, BindingMode mode = BindingMode.Default)
-            : this()
+            : base(mode)
         {
             Path = path;
-            Mode = mode;
         }
-
-        /// <summary>
-        /// Gets or sets the <see cref="IValueConverter"/> to use.
-        /// </summary>
-        public IValueConverter Converter { get; set; }
-
-        /// <summary>
-        /// Gets or sets a parameter to pass to <see cref="Converter"/>.
-        /// </summary>
-        public object ConverterParameter { get; set; }
 
         /// <summary>
         /// Gets or sets the name of the element to use as the binding source.
         /// </summary>
-        public string ElementName { get; set; }
+        public string? ElementName { get; set; }
 
         /// <summary>
-        /// Gets or sets the value to use when the binding is unable to produce a value.
+        /// Gets or sets the relative source for the binding.
         /// </summary>
-        public object FallbackValue { get; set; }
+        public RelativeSource? RelativeSource { get; set; }
 
         /// <summary>
-        /// Gets or sets the binding mode.
+        /// Gets or sets the source for the binding.
         /// </summary>
-        public BindingMode Mode { get; set; }
+        public object? Source { get; set; } = AvaloniaProperty.UnsetValue;
 
         /// <summary>
         /// Gets or sets the binding path.
@@ -70,299 +57,150 @@ namespace Avalonia.Data
         public string Path { get; set; } = "";
 
         /// <summary>
-        /// Gets or sets the binding priority.
-        /// </summary>
-        public BindingPriority Priority { get; set; }
-
-        /// <summary>
-        /// Gets or sets the relative source for the binding.
-        /// </summary>
-        public RelativeSource RelativeSource { get; set; }
-
-        /// <summary>
-        /// Gets or sets the source for the binding.
-        /// </summary>
-        public object Source { get; set; }
-
-        /// <summary>
-        /// Gets or sets the string format.
-        /// </summary>
-        public string StringFormat { get; set; }
-
-        public WeakReference DefaultAnchor { get; set; }
-
-        /// <summary>
         /// Gets or sets a function used to resolve types from names in the binding path.
         /// </summary>
-        public Func<string, string, Type> TypeResolver { get; set; }
+        public Func<string?, string, Type>? TypeResolver { get; set; }
 
-        /// <inheritdoc/>
-        public InstancedBinding Initiate(
-            IAvaloniaObject target,
-            AvaloniaProperty targetProperty,
-            object anchor = null,
+        [Obsolete(ObsoletionMessages.MayBeRemovedInAvalonia12)]
+        public override InstancedBinding? Initiate(
+            AvaloniaObject target,
+            AvaloniaProperty? targetProperty,
+            object? anchor = null,
             bool enableDataValidation = false)
         {
-            Contract.Requires<ArgumentNullException>(target != null);
-            anchor = anchor ?? DefaultAnchor?.Target;
-            
-            enableDataValidation = enableDataValidation && Priority == BindingPriority.LocalValue;
-            
-            ExpressionObserver observer;
-
-            var (node, mode)  = ExpressionObserverBuilder.Parse(Path, enableDataValidation, TypeResolver);
-
-            if (ElementName != null)
-            {
-                observer = CreateElementObserver(
-                    (target as IStyledElement) ?? (anchor as IStyledElement),
-                    ElementName,
-                    node);
-            }
-            else if (Source != null)
-            {
-                observer = CreateSourceObserver(Source, node);
-            }
-            else if (RelativeSource == null)
-            {
-                if (mode == SourceMode.Data)
-                {
-                    observer = CreateDataContextObserver(
-                        target,
-                        node,
-                        targetProperty == StyledElement.DataContextProperty,
-                        anchor); 
-                }
-                else
-                {
-                    observer = new ExpressionObserver(
-                        (target as IStyledElement) ?? (anchor as IStyledElement),
-                        node);
-                }
-            }
-            else if (RelativeSource.Mode == RelativeSourceMode.DataContext)
-            {
-                observer = CreateDataContextObserver(
-                    target,
-                    node,
-                    targetProperty == StyledElement.DataContextProperty,
-                    anchor);
-            }
-            else if (RelativeSource.Mode == RelativeSourceMode.Self)
-            {
-                observer = CreateSourceObserver(
-                    (target as IStyledElement) ?? (anchor as IStyledElement),
-                    node);
-            }
-            else if (RelativeSource.Mode == RelativeSourceMode.TemplatedParent)
-            {
-                observer = CreateTemplatedParentObserver(
-                    (target as IStyledElement) ?? (anchor as IStyledElement),
-                    node);
-            }
-            else if (RelativeSource.Mode == RelativeSourceMode.FindAncestor)
-            {
-                if (RelativeSource.Tree == TreeType.Visual && RelativeSource.AncestorType == null)
-                {
-                    throw new InvalidOperationException("AncestorType must be set for RelativeSourceMode.FindAncestor when searching the visual tree.");
-                }
-
-                observer = CreateFindAncestorObserver(
-                    (target as IStyledElement) ?? (anchor as IStyledElement),
-                    RelativeSource,
-                    node);
-            }
-            else
-            {
-                throw new NotSupportedException();
-            }
-
-            var fallback = FallbackValue;
-
-            // If we're binding to DataContext and our fallback is UnsetValue then override
-            // the fallback value to null, as broken bindings to DataContext must reset the
-            // DataContext in order to not propagate incorrect DataContexts to child controls.
-            // See Avalonia.Markup.UnitTests.Data.DataContext_Binding_Should_Produce_Correct_Results.
-            if (targetProperty == StyledElement.DataContextProperty && fallback == AvaloniaProperty.UnsetValue)
-            {
-                fallback = null;
-            }
-
-            var converter = Converter;
-            var targetType = targetProperty?.PropertyType ?? typeof(object);
-
-            // We only respect `StringFormat` if the type of the property we're assigning to will
-            // accept a string. Note that this is slightly different to WPF in that WPF only applies
-            // `StringFormat` for target type `string` (not `object`).
-            if (!string.IsNullOrWhiteSpace(StringFormat) && 
-                (targetType == typeof(string) || targetType == typeof(object)))
-            {
-                converter = new StringFormatValueConverter(StringFormat, converter);
-            }
-
-            var subject = new BindingExpression(
-                observer,
-                targetType,
-                fallback,
-                converter ?? DefaultValueConverter.Instance,
-                ConverterParameter,
-                Priority);
-
-            return new InstancedBinding(subject, Mode, Priority);
+            var expression = InstanceCore(targetProperty, target, anchor, enableDataValidation);
+            return new InstancedBinding(target, expression, Mode, Priority);
         }
 
-        private ExpressionObserver CreateDataContextObserver(
-            IAvaloniaObject target,
-            ExpressionNode node,
-            bool targetIsDataContext,
-            object anchor)
+        private protected override BindingExpressionBase Instance(
+            AvaloniaProperty targetProperty,
+            AvaloniaObject target,
+            object? anchor)
         {
-            Contract.Requires<ArgumentNullException>(target != null);
-
-            if (!(target is IStyledElement))
-            {
-                target = anchor as IStyledElement;
-
-                if (target == null)
-                {
-                    throw new InvalidOperationException("Cannot find a DataContext to bind to.");
-                }
-            }
-
-            if (!targetIsDataContext)
-            {
-                var result = new ExpressionObserver(
-                    () => target.GetValue(StyledElement.DataContextProperty),
-                    node,
-                    new UpdateSignal(target, StyledElement.DataContextProperty),
-                    null);
-
-                return result;
-            }
-            else
-            {
-                return new ExpressionObserver(
-                    GetParentDataContext(target),
-                    node,
-                    null);
-            }
+            var enableDataValidation = targetProperty.GetMetadata(target).EnableDataValidation ?? false;
+            return InstanceCore(targetProperty, target, anchor, enableDataValidation);
         }
 
-        private ExpressionObserver CreateElementObserver(
-            IStyledElement target,
-            string elementName,
-            ExpressionNode node)
+        /// <summary>
+        /// Hack for TreeDataTemplate to create a binding expression for an item.
+        /// </summary>
+        /// <param name="source">The item.</param>
+        /// <remarks>
+        /// Ideally we'd do this in a more generic way but didn't have time to refactor
+        /// ITreeDataTemplate in time for 11.0. We should revisit this in 12.0.
+        /// </remarks>
+        // TODO12: Refactor
+        internal BindingExpression CreateObservableForTreeDataTemplate(object source)
         {
-            Contract.Requires<ArgumentNullException>(target != null);
-            
-            var result = new ExpressionObserver(
-                ControlLocator.Track(target, elementName),
-                node,
-                null);
+            if (!string.IsNullOrEmpty(ElementName))
+                throw new NotSupportedException("ElementName bindings are not supported in this context.");
+            if (RelativeSource is not null && RelativeSource.Mode != RelativeSourceMode.DataContext)
+                throw new NotSupportedException("RelativeSource bindings are not supported in this context.");
+            if (Source != AvaloniaProperty.UnsetValue)
+                throw new NotSupportedException("Source bindings are not supported in this context.");
+
+            List<ExpressionNode>? nodes = null;
+            var isRooted = false;
+
+            if (!string.IsNullOrEmpty(Path))
+            {
+                var reader = new CharacterReader(Path.AsSpan());
+                var (astNodes, sourceMode) = BindingExpressionGrammar.ParseToPooledList(ref reader);
+                nodes = ExpressionNodeFactory.CreateFromAst(
+                    astNodes,
+                    TypeResolver,
+                    GetNameScope(),
+                    out isRooted);
+            }
+
+            if (isRooted)
+                throw new NotSupportedException("Rooted binding paths are not supported in this context.");
+
+            return new BindingExpression(
+                source,
+                nodes,
+                FallbackValue,
+                converter: Converter,
+                converterParameter: ConverterParameter,
+                targetNullValue: TargetNullValue);
+        }
+
+        private UntypedBindingExpressionBase InstanceCore(
+            AvaloniaProperty? targetProperty, 
+            AvaloniaObject target,
+            object? anchor,
+            bool enableDataValidation)
+        {
+            List<ExpressionNode>? nodes = null;
+            var isRooted = false;
+
+            // Build the expression nodes from the binding path.
+            if (!string.IsNullOrEmpty(Path))
+            {
+                var reader = new CharacterReader(Path.AsSpan());
+                var (astPool, sourceMode) = BindingExpressionGrammar.ParseToPooledList(ref reader);
+                nodes = ExpressionNodeFactory.CreateFromAst(
+                    astPool,
+                    TypeResolver,
+                    GetNameScope(),
+                    out isRooted);
+            }
+
+            // If the binding isn't rooted (i.e. doesn't have a Source or start with $parent, $self,
+            // #elementName etc.) then we need to add a source node. The type of source node will
+            // depend on the ElementName and RelativeSource properties of the binding and if
+            // neither of those are set will default to a data context node.
+            if (Source == AvaloniaProperty.UnsetValue && !isRooted && CreateSourceNode(targetProperty) is { } sourceNode)
+            {
+                nodes ??= new();
+                nodes.Insert(0, sourceNode);
+            }
+
+            // If the first node is an ISourceNode then allow it to select the source; otherwise
+            // use the binding source if specified, falling back to the target.
+            var source = nodes?.Count > 0 && nodes[0] is SourceNode sn ?
+                sn.SelectSource(Source, target, anchor ?? DefaultAnchor?.Target) :
+                Source != AvaloniaProperty.UnsetValue ? Source : target;
+
+            var (mode, trigger) = ResolveDefaultsFromMetadata(target, targetProperty);
+
+            return new BindingExpression(
+                source,
+                nodes,
+                FallbackValue,
+                converter: Converter,
+                converterCulture: ConverterCulture,
+                converterParameter: ConverterParameter,
+                enableDataValidation: enableDataValidation,
+                mode: mode,
+                priority: Priority,
+                stringFormat: StringFormat,
+                targetProperty: targetProperty,
+                targetNullValue: TargetNullValue,
+                targetTypeConverter: TargetTypeConverter.GetReflectionConverter(),
+                updateSourceTrigger: trigger);
+        }
+
+        private INameScope? GetNameScope()
+        {
+            INameScope? result = null;
+            NameScope?.TryGetTarget(out result);
             return result;
         }
 
-        private ExpressionObserver CreateFindAncestorObserver(
-            IStyledElement target,
-            RelativeSource relativeSource,
-            ExpressionNode node)
+        private ExpressionNode? CreateSourceNode(AvaloniaProperty? targetProperty)
         {
-            Contract.Requires<ArgumentNullException>(target != null);
-
-            IObservable<object> controlLocator;
-
-            switch (relativeSource.Tree)
+            if (!string.IsNullOrEmpty(ElementName))
             {
-                case TreeType.Logical:
-                    controlLocator = ControlLocator.Track(
-                        (ILogical)target,
-                        relativeSource.AncestorLevel - 1,
-                        relativeSource.AncestorType);
-                    break;
-                case TreeType.Visual:
-                    controlLocator = VisualLocator.Track(
-                        (IVisual)target,
-                        relativeSource.AncestorLevel - 1,
-                        relativeSource.AncestorType);
-                    break;
-                default:
-                    throw new InvalidOperationException("Invalid tree to traverse.");
+                var nameScope = GetNameScope() ?? throw new InvalidOperationException(
+                    "Cannot create ElementName binding when NameScope is null");
+                return new NamedElementNode(nameScope, ElementName);
             }
 
-            return new ExpressionObserver(
-                controlLocator,
-                node,
-                null);
-        }
+            if (RelativeSource is not null)
+                return ExpressionNodeFactory.CreateRelativeSource(RelativeSource);
 
-        private ExpressionObserver CreateSourceObserver(
-            object source,
-            ExpressionNode node)
-        {
-            Contract.Requires<ArgumentNullException>(source != null);
-
-            return new ExpressionObserver(source, node);
-        }
-
-        private ExpressionObserver CreateTemplatedParentObserver(
-            IAvaloniaObject target,
-            ExpressionNode node)
-        {
-            Contract.Requires<ArgumentNullException>(target != null);
-            
-            var result = new ExpressionObserver(
-                () => target.GetValue(StyledElement.TemplatedParentProperty),
-                node,
-                new UpdateSignal(target, StyledElement.TemplatedParentProperty),
-                null);
-
-            return result;
-        }
-
-        private IObservable<object> GetParentDataContext(IAvaloniaObject target)
-        {
-            // The DataContext is based on the visual parent and not the logical parent: this may
-            // seem counter intuitive considering the fact that property inheritance works on the logical
-            // tree, but consider a ContentControl with a ContentPresenter. The ContentControl's
-            // Content property is bound to a value which becomes the ContentPresenter's 
-            // DataContext - it is from this that the child hosted by the ContentPresenter needs to
-            // inherit its DataContext.
-            return target.GetObservable(Visual.VisualParentProperty)
-                .Select(x =>
-                {
-                    return (x as IAvaloniaObject)?.GetObservable(StyledElement.DataContextProperty) ?? 
-                           Observable.Return((object)null);
-                }).Switch();
-        }
-
-        private class UpdateSignal : SingleSubscriberObservableBase<Unit>
-        {
-            private readonly IAvaloniaObject _target;
-            private readonly AvaloniaProperty _property;
-
-            public UpdateSignal(IAvaloniaObject target, AvaloniaProperty property)
-            {
-                _target = target;
-                _property = property;
-            }
-
-            protected override void Subscribed()
-            {
-                _target.PropertyChanged += PropertyChanged;
-            }
-
-            protected override void Unsubscribed()
-            {
-                _target.PropertyChanged -= PropertyChanged;
-            }
-
-            private void PropertyChanged(object sender, AvaloniaPropertyChangedEventArgs e)
-            {
-                if (e.Property == _property)
-                {
-                    PublishNext(Unit.Default);
-                }
-            }
+            return ExpressionNodeFactory.CreateDataContext(targetProperty);
         }
     }
 }

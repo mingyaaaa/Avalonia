@@ -1,37 +1,52 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <RootNamespace></RootNamespace>
     <IsPackable>False</IsPackable>
-    <NoWarn>CS0649;CS0169</NoWarn>
+    <NoWarn>$(NoWarn);CS0649;CS0169;SYSLIB0011</NoWarn>
+    <NukeTelemetryVersion>1</NukeTelemetryVersion>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <!-- See https://github.com/nuke-build/nuke/issues/818 -->
+    <EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
+    <!-- Necessary for Microsoft.DotNet.GenAPI.Tool -->
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8-transport/nuget/v3/index.json</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
+  <Import Project="..\build\JetBrains.dotMemoryUnit.props" />
   <ItemGroup>
-    <PackageReference Include="Nuke.Common" Version="0.12.3" />
-    <PackageReference Include="xunit.runner.console" Version="2.3.1" />
-    <PackageReference Include="JetBrains.dotMemoryUnit" Version="3.0.20171219.105559" />
+    <PackageReference Include="Nuke.Common" Version="6.2.1" />
+    <PackageReference Include="vswhere" Version="2.6.7" Condition=" '$(OS)' == 'Windows_NT' " />
+    <PackageReference Include="MicroCom.CodeGenerator" Version="0.11.0" />
+    <!-- Keep in sync with Avalonia.Build.Tasks -->
+    <PackageReference Include="Mono.Cecil" Version="0.11.5" />
+    <PackageReference Include="Microsoft.Debugging.Tools.PdbStr" Version="20230731.1609.0" GeneratePathProperty="true" PrivateAssets="All"/>
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.3.2" PrivateAssets="All" />
+    <PackageReference Include="xunit.runner.console" Version="2.4.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <PackageDownload Include="Microsoft.DotNet.ApiCompat.Tool" Version="[8.0.200]" />
+    <PackageDownload Include="Microsoft.DotNet.GenAPI.Tool" Version="[8.0.300-preview.24115.44]" />
   </ItemGroup>
 
   <ItemGroup>
     <NukeMetadata Include="**\*.json" Exclude="bin\**;obj\**" />
     <NukeExternalFiles Include="**\*.*.ext" Exclude="bin\**;obj\**" />
-    <None Remove="*.csproj.DotSettings;*.ref.*.txt" />
-    
+
     <!-- Common build related files -->
-    <None Include="..\build.ps1" />
-    <None Include="..\build.sh" />
-    <None Include="..\.nuke" />     
-    <None Include="..\global.json" Condition="Exists('..\global.json')" />
-    <None Include="..\nuget.config" Condition="Exists('..\nuget.config')" />
-    <None Include="..\Jenkinsfile" Condition="Exists('..\Jenkinsfile')" />
-    <None Include="..\appveyor.yml" Condition="Exists('..\appveyor.yml')" />
-    <None Include="..\.travis.yml" Condition="Exists('..\.travis.yml')" />
-    <None Include="..\GitVersion.yml" Condition="Exists('..\GitVersion.yml')" />
     <Compile Remove="Numerge/**/*.*" />
-    <Compile Include="Numerge/Numerge/**/*.cs" />
+    <Compile Include="Numerge/Numerge/**/*.cs" Exclude="Numerge/Numerge/obj/**/*.cs" />
+    <EmbeddedResource Include="$(PkgMicrosoft_Debugging_Tools_PdbStr)/content/x86/pdbstr.exe" />
+    <EmbeddedResource Include="../build/avalonia.snk" />
+    <Compile Remove="il-repack\ILRepack\Application.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\dirs.proj">
+      <Link>dirs.proj</Link>
+    </Content>
   </ItemGroup>
 
 </Project>

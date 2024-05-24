@@ -3,6 +3,7 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
+using Avalonia.Controls.Metadata;
 using Avalonia.Input;
 using Avalonia.Media;
 using System.Diagnostics;
@@ -12,11 +13,11 @@ namespace Avalonia.Controls.Primitives
     /// <summary>
     /// Represents an individual <see cref="T:Avalonia.Controls.DataGrid" /> row header. 
     /// </summary>
+    [TemplatePart(DATAGRIDROWHEADER_elementRootName, typeof(Control))]
+    [PseudoClasses(":invalid", ":selected", ":editing", ":current")]
     public class DataGridRowHeader : ContentControl
     {
-        private const string DATAGRIDROWHEADER_elementRootName = "Root";
-        private const double DATAGRIDROWHEADER_separatorThickness = 1;
-
+        private const string DATAGRIDROWHEADER_elementRootName = "PART_Root";
         private Control _rootElement;
 
         public static readonly StyledProperty<IBrush> SeparatorBrushProperty =
@@ -94,14 +95,12 @@ namespace Avalonia.Controls.Primitives
         /// <summary>
         /// Builds the visual tree for the row header when a new template is applied. 
         /// </summary>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            base.OnTemplateApplied(e);
-
             _rootElement = e.NameScope.Find<Control>(DATAGRIDROWHEADER_elementRootName);
             if (_rootElement != null)
             {
-                ApplyOwnerStatus();
+                UpdatePseudoClasses();
             }
         } 
 
@@ -133,43 +132,58 @@ namespace Avalonia.Controls.Primitives
             return measuredSize;
         }
 
-        //TODO Implement
-        internal void ApplyOwnerStatus()
+        internal void UpdatePseudoClasses()
         {
             if (_rootElement != null && Owner != null && Owner.IsVisible)
             {
+                if (OwningRow != null)
+                {
+                    PseudoClasses.Set(":invalid", !OwningRow.IsValid);
 
+                    PseudoClasses.Set(":selected", OwningRow.IsSelected);
+
+                    PseudoClasses.Set(":editing", OwningRow.IsEditing);
+
+                    if (OwningGrid != null)
+                    {
+                        PseudoClasses.Set(":current", OwningRow.Slot == OwningGrid.CurrentSlot);
+                    }
+                }
+                else if (OwningRowGroupHeader != null && OwningGrid != null)
+                {
+                    PseudoClasses.Set(":current", OwningRowGroupHeader.RowGroupInfo.Slot == OwningGrid.CurrentSlot);
+                }
             }
         }
 
-        protected override void OnPointerEnter(PointerEventArgs e)
+        protected override void OnPointerEntered(PointerEventArgs e)
         {
             if (OwningRow != null)
             {
                 OwningRow.IsMouseOver = true;
             }
 
-            base.OnPointerEnter(e);
+            base.OnPointerEntered(e);
         }
-        protected override void OnPointerLeave(PointerEventArgs e)
+        protected override void OnPointerExited(PointerEventArgs e)
         {
             if (OwningRow != null)
             {
                 OwningRow.IsMouseOver = false;
             }
 
-            base.OnPointerLeave(e);
+            base.OnPointerExited(e);
         }
 
         //TODO TabStop
         private void DataGridRowHeader_PointerPressed(object sender, PointerPressedEventArgs e)
         {
-            if(e.MouseButton != MouseButton.Left)
+            if (OwningGrid == null)
             {
                 return;
             }
 
-            if (OwningGrid != null)
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
                 if (!e.Handled)
                 //if (!e.Handled && OwningGrid.IsTabStop)
@@ -181,7 +195,19 @@ namespace Avalonia.Controls.Primitives
                     Debug.Assert(sender is DataGridRowHeader);
                     Debug.Assert(sender == this);
                     e.Handled = OwningGrid.UpdateStateOnMouseLeftButtonDown(e, -1, Slot, false);
-                    OwningGrid.UpdatedStateOnMouseLeftButtonDown = true;
+                }
+            }
+            else if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+            {
+                if (!e.Handled)
+                {
+                    OwningGrid.Focus();
+                }
+                if (OwningRow != null)
+                {
+                    Debug.Assert(sender is DataGridRowHeader);
+                    Debug.Assert(sender == this);
+                    e.Handled = OwningGrid.UpdateStateOnMouseRightButtonDown(e, -1, Slot, false);
                 }
             }
         } 

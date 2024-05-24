@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Platform;
 using SkiaSharp;
 
@@ -20,16 +17,28 @@ namespace Avalonia.Skia
         {
             SourceGeometry = source;
             Transform = transform;
+            var matrix = transform.ToSKMatrix();
 
-            var transformedPath = source.EffectivePath.Clone();
-            transformedPath.Transform(transform.ToSKMatrix());
+            var transformedPath = StrokePath =  source.StrokePath.Clone();
+            if (transformedPath is not null)
+                transformedPath.Transform(matrix);
 
-            EffectivePath = transformedPath;
-            Bounds = transformedPath.TightBounds.ToAvaloniaRect();
+            Bounds = transformedPath?.TightBounds.ToAvaloniaRect() ?? default;
+            
+            if (ReferenceEquals(source.StrokePath, source.FillPath))
+                FillPath = transformedPath;
+            else if (source.FillPath != null)
+            {
+                FillPath = transformedPath = source.FillPath.Clone();
+                transformedPath.Transform(matrix);
+            }
         }
 
         /// <inheritdoc />
-        public override SKPath EffectivePath { get; }
+        public override SKPath? StrokePath { get; }
+        
+        /// <inheritdoc />
+        public override SKPath? FillPath { get; }
 
         /// <inheritdoc />
         public IGeometryImpl SourceGeometry { get; }

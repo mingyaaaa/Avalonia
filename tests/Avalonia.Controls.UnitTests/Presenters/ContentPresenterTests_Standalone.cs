@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -54,13 +51,13 @@ namespace Avalonia.Controls.UnitTests.Presenters
             var target = new ContentPresenter
             {
                 ContentTemplate =
-                    new FuncDataTemplate<string>(t => new ContentControl() { Content = t }, false)
+                    new FuncDataTemplate<string>((t, _) => new ContentControl() { Content = t }, false)
             };
 
             var parentMock = new Mock<Control>();
             parentMock.As<IContentPresenterHost>();
             parentMock.As<IRenderRoot>();
-            parentMock.As<IStyleRoot>();
+            parentMock.As<ILogicalRoot>();
 
             (target as ISetLogicalParent).SetParent(parentMock.Object);
 
@@ -84,7 +81,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
 
             Assert.NotNull(bar);
             Assert.True(bar != foo);
-            Assert.False((foo as IControl).IsAttachedToLogicalTree);
+            Assert.False((foo as ILogical).IsAttachedToLogicalTree);
             Assert.True(foodetached);
         }
 
@@ -93,19 +90,19 @@ namespace Avalonia.Controls.UnitTests.Presenters
         {
             var contentControl = new ContentControl
             {
-                Template = new FuncControlTemplate<ContentControl>(c => new ContentPresenter()
+                Template = new FuncControlTemplate<ContentControl>((c, scope) => new ContentPresenter()
                 {
                     Name = "PART_ContentPresenter",
                     [~ContentPresenter.ContentProperty] = c[~ContentControl.ContentProperty],
                     [~ContentPresenter.ContentTemplateProperty] = c[~ContentControl.ContentTemplateProperty]
-                }),
+                }.RegisterInNameScope(scope)),
                 ContentTemplate =
-                    new FuncDataTemplate<string>(t => new ContentControl() { Content = t }, false)
+                    new FuncDataTemplate<string>((t, _) => new ContentControl() { Content = t }, false)
             };
 
             var parentMock = new Mock<Control>();
             parentMock.As<IRenderRoot>();
-            parentMock.As<IStyleRoot>();
+            parentMock.As<ILogicalRoot>();
             parentMock.As<ILogical>().SetupGet(l => l.IsAttachedToLogicalTree).Returns(true);
 
             (contentControl as ISetLogicalParent).SetParent(parentMock.Object);
@@ -134,7 +131,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
             Assert.NotNull(tbbar);
 
             Assert.True(tbbar != tbfoo);
-            Assert.False((tbfoo as IControl).IsAttachedToLogicalTree);
+            Assert.False((tbfoo as ILogical).IsAttachedToLogicalTree);
             Assert.True(foodetached);
         }
 
@@ -144,13 +141,13 @@ namespace Avalonia.Controls.UnitTests.Presenters
             var target = new ContentPresenter
             {
                 ContentTemplate =
-                    new FuncDataTemplate<string>(t => new ContentControl() { Content = t }, false)
+                    new FuncDataTemplate<string>((t, _) => new ContentControl() { Content = t }, false)
             };
 
             var parentMock = new Mock<Control>();
             parentMock.As<IContentPresenterHost>();
             parentMock.As<IRenderRoot>();
-            parentMock.As<IStyleRoot>();
+            parentMock.As<ILogicalRoot>();
 
             (target as ISetLogicalParent).SetParent(parentMock.Object);
 
@@ -169,7 +166,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
 
             (target as ISetLogicalParent).SetParent(null);
 
-            Assert.False((foo as IControl).IsAttachedToLogicalTree);
+            Assert.False((foo as ILogical).IsAttachedToLogicalTree);
             Assert.True(foodetached);
         }
 
@@ -179,7 +176,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
             var target = new ContentPresenter
             {
                 ContentTemplate =
-                    new FuncDataTemplate<string>(t => new ContentControl() { Content = t }, false)
+                    new FuncDataTemplate<string>((t, _) => new ContentControl() { Content = t }, false)
             };
 
             target.Content = "foo";
@@ -206,23 +203,6 @@ namespace Avalonia.Controls.UnitTests.Presenters
         }
 
         [Fact]
-        public void Changing_Background_Brush_Color_Should_Invalidate_Visual()
-        {
-            var target = new ContentPresenter()
-            {
-                Background = new SolidColorBrush(Colors.Red),
-            };
-
-            var root = new TestRoot(target);
-            var renderer = Mock.Get(root.Renderer);
-            renderer.ResetCalls();
-
-            ((SolidColorBrush)target.Background).Color = Colors.Green;
-
-            renderer.Verify(x => x.AddDirty(target), Times.Once);
-        }
-
-        [Fact]
         public void Should_Not_Bind_Old_Child_To_New_DataContext()
         {
             // Test for issue #1099.
@@ -235,8 +215,8 @@ namespace Avalonia.Controls.UnitTests.Presenters
             {
                 DataTemplates =
                 {
-                    new FuncDataTemplate<string>(x => textBlock),
-                    new FuncDataTemplate<int>(x => new Canvas()),
+                    new FuncDataTemplate<string>((x, _) => textBlock),
+                    new FuncDataTemplate<int>((x, _) => new Canvas()),
                 },
             };
 
@@ -250,6 +230,108 @@ namespace Avalonia.Controls.UnitTests.Presenters
             };
 
             target.Content = 42;
+        }
+
+        [Fact]
+        public void Should_Reset_InheritanceParent_When_Child_Removed()
+        {
+            var logicalParent = new Canvas();
+            var child = new TextBlock();
+            var target = new ContentPresenter();
+            var root = new TestRoot(target);
+
+            ((ISetLogicalParent)child).SetParent(logicalParent);
+            target.Content = child;
+            target.Content = null;
+
+            // InheritanceParent is exposed via StylingParent.
+            Assert.Same(logicalParent, ((IStyleHost)child).StylingParent);
+        }
+
+        [Fact]
+        public void Should_Create_Child_Even_With_Null_Content_When_ContentTemplate_Is_Set()
+        {
+            var target = new ContentPresenter
+            {
+                ContentTemplate = new FuncDataTemplate<object>(_ => true, (_, __) => new TextBlock
+                {
+                    Text = "Hello World"
+                }),
+                Content = null
+            };
+
+            target.UpdateChild();
+
+            var textBlock = Assert.IsType<TextBlock>(target.Child);
+            Assert.Equal("Hello World", textBlock.Text);
+        }
+
+        [Fact]
+        public void Should_Not_Create_Child_Even_With_Null_Content_And_DataTemplates_InsteadOf_ContentTemplate()
+        {
+            var target = new ContentPresenter
+            {
+                DataTemplates =
+                {
+                    new FuncDataTemplate<object>(_ => true, (_, __) => new TextBlock
+                    {
+                        Text = "Hello World"
+                    })
+                },
+                Content = null
+            };
+
+            target.UpdateChild();
+
+            Assert.Null(target.Child);
+        }
+
+        [Fact]
+        public void Should_Not_Create_Child_When_Content_And_Template_Are_Null()
+        {
+            var target = new ContentPresenter
+            {
+                ContentTemplate = null,
+                Content = null
+            };
+
+            target.UpdateChild();
+
+            Assert.Null(target.Child);
+        }
+
+        [Fact]
+        public void Should_Not_Create_When_Child_Content_Is_Null_But_Expected_ValueType_With_FuncDataTemplate()
+        {
+            var target = new ContentPresenter
+            {
+                ContentTemplate = new FuncDataTemplate<int>(_ => true, (_, __) => new TextBlock
+                {
+                    Text = "Hello World"
+                }),
+                Content = null
+            };
+
+            target.UpdateChild();
+
+            Assert.Null(target.Child);
+        }
+
+        [Fact]
+        public void Should_Create_Child_When_Content_Is_Null_And_Expected_NullableValueType_With_FuncDataTemplate()
+        {
+            var target = new ContentPresenter
+            {
+                ContentTemplate = new FuncDataTemplate<int?>(_ => true, (_, __) => new TextBlock
+                {
+                    Text = "Hello World"
+                }),
+                Content = null
+            };
+
+            target.UpdateChild();
+
+            Assert.NotNull(target.Child);
         }
     }
 }

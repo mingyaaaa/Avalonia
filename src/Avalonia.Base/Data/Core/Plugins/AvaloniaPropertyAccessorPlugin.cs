@@ -1,15 +1,12 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Reactive.Linq;
+using Avalonia.Utilities;
 
 namespace Avalonia.Data.Core.Plugins
 {
     /// <summary>
     /// Reads a property from a <see cref="AvaloniaObject"/>.
     /// </summary>
-    public class AvaloniaPropertyAccessorPlugin : IPropertyAccessorPlugin
+    internal class AvaloniaPropertyAccessorPlugin : IPropertyAccessorPlugin
     {
         /// <inheritdoc/>
         public bool Match(object obj, string propertyName)
@@ -31,12 +28,14 @@ namespace Avalonia.Data.Core.Plugins
         /// An <see cref="IPropertyAccessor"/> interface through which future interactions with the 
         /// property will be made.
         /// </returns>
-        public IPropertyAccessor Start(WeakReference reference, string propertyName)
+        public IPropertyAccessor? Start(WeakReference<object?> reference, string propertyName)
         {
-            Contract.Requires<ArgumentNullException>(reference != null);
-            Contract.Requires<ArgumentNullException>(propertyName != null);
+            _ = reference ?? throw new ArgumentNullException(nameof(reference));
+            _ = propertyName ?? throw new ArgumentNullException(nameof(propertyName));
 
-            var instance = reference.Target;
+            if (!reference.TryGetTarget(out var instance) || instance is null)
+                return null;
+
             var o = (AvaloniaObject)instance;
             var p = LookupProperty(o, propertyName);
 
@@ -56,74 +55,84 @@ namespace Avalonia.Data.Core.Plugins
             }
         }
 
-        private static AvaloniaProperty LookupProperty(AvaloniaObject o, string propertyName)
+        private static AvaloniaProperty? LookupProperty(AvaloniaObject o, string propertyName)
         {
             return AvaloniaPropertyRegistry.Instance.FindRegistered(o, propertyName);
         }
 
-        private static bool IsOfType(Type type, string typeName)
-        {
-            while (type != null)
-            {
-                if (type.Name == typeName)
-                {
-                    return true;
-                }
-
-                type = type.BaseType;
-            }
-
-            return false;
-        }
-
-        private class Accessor : PropertyAccessorBase
+        private class Accessor : PropertyAccessorBase, IWeakEventSubscriber<AvaloniaPropertyChangedEventArgs>
         {
             private readonly WeakReference<AvaloniaObject> _reference;
             private readonly AvaloniaProperty _property;
-            private IDisposable _subscription;
 
             public Accessor(WeakReference<AvaloniaObject> reference, AvaloniaProperty property)
             {
-                Contract.Requires<ArgumentNullException>(reference != null);
-                Contract.Requires<ArgumentNullException>(property != null);
-
-                _reference = reference;
-                _property = property;
+                _reference = reference ?? throw new ArgumentNullException(nameof(reference));
+                _property = property ?? throw new ArgumentNullException(nameof(property));
             }
 
-            public AvaloniaObject Instance
+            public AvaloniaObject? Instance
             {
                 get
                 {
-                    AvaloniaObject result;
-                    _reference.TryGetTarget(out result);
+                    _reference.TryGetTarget(out var result);
                     return result;
                 }
             }
 
-            public override Type PropertyType => _property.PropertyType;
-            public override object Value => Instance?.GetValue(_property);
+            public override Type? PropertyType => _property?.PropertyType;
+            public override object? Value => Instance?.GetValue(_property);
 
-            public override bool SetValue(object value, BindingPriority priority)
+            public override bool SetValue(object? value, BindingPriority priority)
             {
                 if (!_property.IsReadOnly)
                 {
-                    Instance.SetValue(_property, value, priority);
+                    Instance?.SetValue(_property, value, priority);
                     return true;
                 }
 
                 return false;
             }
 
+            void IWeakEventSubscriber<AvaloniaPropertyChangedEventArgs>.
+                OnEvent(object? notifyPropertyChanged, WeakEvent ev, AvaloniaPropertyChangedEventArgs e)
+            {
+                if (e.Property == _property)
+                {
+                    SendCurrentValue();
+                }
+            }
+
             protected override void SubscribeCore()
             {
-                _subscription = Instance?.GetObservable(_property).Subscribe(PublishValue);
+                SubscribeToChanges();
+                SendCurrentValue();
             }
 
             protected override void UnsubscribeCore()
             {
-                _subscription?.Dispose();
-                _subscription = null;
+                var instance = Instance;
+
+                if (instance != null)
+                    WeakEvents.AvaloniaPropertyChanged.Unsubscribe(instance, this);
+            }
+
+            private void SendCurrentValue()
+            {
+                try
+                {
+                    var value = Value;
+                    PublishValue(value);
+                }
+                catch { }
+            }
+
+            private void SubscribeToChanges()
+            {
+                var instance = Instance;
+
+                if (instance != null)
+                    WeakEvents.AvaloniaPropertyChanged.Subscribe(instance, this);
             }
         }
     }

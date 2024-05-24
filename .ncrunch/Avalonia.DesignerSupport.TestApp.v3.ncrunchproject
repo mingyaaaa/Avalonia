@@ -1,6 +1,7 @@
 ﻿<ProjectConfiguration>
   <Settings>
-    <IgnoreThisComponentCompletely>True</IgnoreThisComponentCompletely>
-    <PreviouslyBuiltSuccessfully>True</PreviouslyBuiltSuccessfully>
+    <CustomBuildProperties>
+      <Value>TargetFramework = net8.0</Value>
+    </CustomBuildProperties>
   </Settings>
 </ProjectConfiguration>

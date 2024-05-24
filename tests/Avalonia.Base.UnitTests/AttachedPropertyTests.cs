@@ -1,6 +1,4 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using Avalonia.Controls;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests
@@ -13,6 +11,7 @@ namespace Avalonia.Base.UnitTests
             var property = new AttachedProperty<string>(
                 "Foo",
                 typeof(Class1),
+                typeof(Control),
                 new StyledPropertyMetadata<string>());
 
             Assert.True(property.IsAttached);

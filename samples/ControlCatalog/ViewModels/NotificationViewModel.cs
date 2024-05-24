@@ -1,30 +1,44 @@
-﻿using System.Reactive;
-using Avalonia.Controls.Notifications;
-using ReactiveUI;
+﻿using Avalonia.Controls.Notifications;
+using MiniMvvm;
 
 namespace ControlCatalog.ViewModels
 {
     public class NotificationViewModel
     {
-        public NotificationViewModel(INotificationManager manager)
+        public WindowNotificationManager? NotificationManager { get; set; }
+
+        public NotificationViewModel()
         {
-            YesCommand = ReactiveCommand.Create(() =>
+            ShowCustomManagedNotificationCommand = MiniCommand.Create(() =>
             {
-                manager.Show(new Avalonia.Controls.Notifications.Notification("Avalonia Notifications", "Start adding notifications to your app today."));
+                NotificationManager?.Show(new NotificationViewModel() { Title = "Hey There!", Message = "Did you know that Avalonia now supports Custom In-Window Notifications?" , NotificationManager = NotificationManager}, NotificationType.Warning);
             });
 
-            NoCommand = ReactiveCommand.Create(() =>
+            ShowManagedNotificationCommand = MiniCommand.Create(() =>
             {
-                manager.Show(new Avalonia.Controls.Notifications.Notification("Avalonia Notifications", "Start adding notifications to your app today. To find out more visit..."));
+                NotificationManager?.Show(new Avalonia.Controls.Notifications.Notification("Welcome", "Avalonia now supports Notifications.", NotificationType.Information));
+            });
+
+            YesCommand = MiniCommand.Create(() =>
+            {
+                NotificationManager?.Show(new Avalonia.Controls.Notifications.Notification("Avalonia Notifications", "Start adding notifications to your app today."));
+            });
+
+            NoCommand = MiniCommand.Create(() =>
+            {
+                NotificationManager?.Show(new Avalonia.Controls.Notifications.Notification("Avalonia Notifications", "Start adding notifications to your app today. To find out more visit..."));
             });
         }
 
-        public string Title { get; set; }
-        public string Message { get; set; }
+        public string? Title { get; set; }
+        public string? Message { get; set; }
 
-        public ReactiveCommand<Unit, Unit> YesCommand { get; }
+        public MiniCommand YesCommand { get; }
 
-        public ReactiveCommand<Unit, Unit> NoCommand { get; }
+        public MiniCommand NoCommand { get; }
 
+        public MiniCommand ShowCustomManagedNotificationCommand { get; }
+
+        public MiniCommand ShowManagedNotificationCommand { get; }
     }
 }

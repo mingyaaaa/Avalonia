@@ -1,9 +1,9 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
+using Avalonia.Automation.Peers;
 using Avalonia.Input;
+using Avalonia.Reactive;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
+using System;
 
 namespace Avalonia.Controls.Primitives
 {
@@ -21,7 +21,7 @@ namespace Avalonia.Controls.Primitives
         /// <summary>
         /// The access key handler for the current window.
         /// </summary>
-        private IAccessKeyHandler _accessKeys;
+        private IAccessKeyHandler? _accessKeys;
 
         /// <summary>
         /// Initializes static members of the <see cref="AccessText"/> class.
@@ -53,53 +53,45 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public bool ShowAccessKey
         {
-            get { return GetValue(ShowAccessKeyProperty); }
-            set { SetValue(ShowAccessKeyProperty, value); }
+            get => GetValue(ShowAccessKeyProperty);
+            set => SetValue(ShowAccessKeyProperty, value);
         }
 
         /// <summary>
         /// Renders the <see cref="AccessText"/> to a drawing context.
         /// </summary>
         /// <param name="context">The drawing context.</param>
-        public override void Render(DrawingContext context)
+        private protected override void RenderCore(DrawingContext context)
         {
-            base.Render(context);
-
+            base.RenderCore(context);
             int underscore = Text?.IndexOf('_') ?? -1;
 
             if (underscore != -1 && ShowAccessKey)
             {
-                var rect = FormattedText.HitTestTextPosition(underscore);
-                var offset = new Vector(0, -0.5);
+                var rect = TextLayout!.HitTestTextPosition(underscore);
+
+                var x1 = Math.Round(rect.Left, MidpointRounding.AwayFromZero);
+                var x2 = Math.Round(rect.Right, MidpointRounding.AwayFromZero);
+                var y = Math.Round(rect.Bottom, MidpointRounding.AwayFromZero) - 1.5;
+
                 context.DrawLine(
                     new Pen(Foreground, 1),
-                    rect.BottomLeft + offset,
-                    rect.BottomRight + offset);
+                    new Point(x1, y),
+                    new Point(x2, y));
             }
         }
 
         /// <inheritdoc/>
-        protected override FormattedText CreateFormattedText(Size constraint, string text)
+        protected override TextLayout CreateTextLayout(string? text)
         {
-            return base.CreateFormattedText(constraint, StripAccessKey(text));
-        }
-
-        /// <summary>
-        /// Measures the control.
-        /// </summary>
-        /// <param name="availableSize">The available size for the control.</param>
-        /// <returns>The desired size.</returns>
-        protected override Size MeasureOverride(Size availableSize)
-        {
-            var result = base.MeasureOverride(availableSize);
-            return result.WithHeight(result.Height + 1);
+            return base.CreateTextLayout(RemoveAccessKeyMarker(text));
         }
 
         /// <inheritdoc/>
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            _accessKeys = (e.Root as IInputRoot)?.AccessKeyHandler;
+            _accessKeys = (e.Root as TopLevel)?.AccessKeyHandler;
 
             if (_accessKeys != null && AccessKey != 0)
             {
@@ -119,30 +111,47 @@ namespace Avalonia.Controls.Primitives
             }
         }
 
-        /// <summary>
-        /// Returns a string with the first underscore stripped.
-        /// </summary>
-        /// <param name="text">The text.</param>
-        /// <returns>The text with the first underscore stripped.</returns>
-        private string StripAccessKey(string text)
+        protected override AutomationPeer OnCreateAutomationPeer()
         {
-            var position = text.IndexOf('_');
+            return new NoneAutomationPeer(this);
+        }
 
-            if (position == -1)
+        internal static string? RemoveAccessKeyMarker(string? text)
+        {
+            if (!string.IsNullOrEmpty(text))
             {
-                return text;
+                var accessKeyMarker = "_";
+                var doubleAccessKeyMarker = accessKeyMarker + accessKeyMarker;
+                int index = FindAccessKeyMarker(text);
+                if (index >= 0 && index < text.Length - 1)
+                    text = text.Remove(index, 1);
+                text = text.Replace(doubleAccessKeyMarker, accessKeyMarker);
             }
-            else
+            return text;
+        }
+
+        private static int FindAccessKeyMarker(string text)
+        {
+            var length = text.Length;
+            var startIndex = 0;
+            while (startIndex < length)
             {
-                return text.Substring(0, position) + text.Substring(position + 1);
+                int index = text.IndexOf('_', startIndex);
+                if (index == -1)
+                    return -1;
+                if (index + 1 < length && text[index + 1] != '_')
+                    return index;
+                startIndex = index + 2;
             }
+
+            return -1;
         }
 
         /// <summary>
         /// Called when the <see cref="TextBlock.Text"/> property changes.
         /// </summary>
         /// <param name="text">The new text.</param>
-        private void TextChanged(string text)
+        private void TextChanged(string? text)
         {
             var key = (char)0;
 

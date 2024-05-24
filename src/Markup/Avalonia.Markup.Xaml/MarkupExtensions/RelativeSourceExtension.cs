@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Data;
 
@@ -31,7 +28,7 @@ namespace Avalonia.Markup.Xaml.MarkupExtensions
         [ConstructorArgument("mode")]
         public RelativeSourceMode Mode { get; set; } = RelativeSourceMode.FindAncestor;
 
-        public Type AncestorType { get; set; }
+        public Type? AncestorType { get; set; }
 
         public TreeType Tree { get; set; }
 

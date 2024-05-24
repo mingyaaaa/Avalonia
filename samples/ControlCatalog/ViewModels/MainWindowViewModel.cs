@@ -1,44 +1,150 @@
-using System.Reactive;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Notifications;
-using Avalonia.Diagnostics.ViewModels;
-using ReactiveUI;
+using Avalonia.Dialogs;
+using Avalonia.Platform;
+using System;
+using System.ComponentModel.DataAnnotations;
+using Avalonia;
+using MiniMvvm;
 
 namespace ControlCatalog.ViewModels
 {
     class MainWindowViewModel : ViewModelBase
     {
-        private IManagedNotificationManager _notificationManager;
+        private WindowState _windowState;
+        private WindowState[] _windowStates = Array.Empty<WindowState>();
+        private ExtendClientAreaChromeHints _chromeHints = ExtendClientAreaChromeHints.PreferSystemChrome;
+        private bool _extendClientAreaEnabled;
+        private bool _systemTitleBarEnabled;
+        private bool _preferSystemChromeEnabled;
+        private double _titleBarHeight;
+        private bool _isSystemBarVisible;
+        private bool _displayEdgeToEdge;
+        private Thickness _safeAreaPadding;
 
-        public MainWindowViewModel(IManagedNotificationManager notificationManager)
+        public MainWindowViewModel()
         {
-            _notificationManager = notificationManager;
-
-            ShowCustomManagedNotificationCommand = ReactiveCommand.Create(() =>
+            AboutCommand = MiniCommand.CreateFromTask(async () =>
             {
-                NotificationManager.Show(new NotificationViewModel(NotificationManager) { Title = "Hey There!", Message = "Did you know that Avalonia now supports Custom In-Window Notifications?" });
+                var dialog = new AboutAvaloniaDialog();
+
+                if ((App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow is { } mainWindow)
+                {
+                    await dialog.ShowDialog(mainWindow);
+                }
+            });
+            ExitCommand = MiniCommand.Create(() =>
+            {
+                (App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
             });
 
-            ShowManagedNotificationCommand = ReactiveCommand.Create(() =>
-            {
-                NotificationManager.Show(new Avalonia.Controls.Notifications.Notification("Welcome", "Avalonia now supports Notifications.", NotificationType.Information));
-            });
+            WindowState = WindowState.Normal;
 
-            ShowNativeNotificationCommand = ReactiveCommand.Create(() =>
+            WindowStates = new WindowState[]
             {
-                NotificationManager.Show(new Avalonia.Controls.Notifications.Notification("Error", "Native Notifications are not quite ready. Coming soon.", NotificationType.Error));
-            });
+                WindowState.Minimized,
+                WindowState.Normal,
+                WindowState.Maximized,
+                WindowState.FullScreen,
+            };
+
+            this.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName is nameof(SystemTitleBarEnabled) or nameof(PreferSystemChromeEnabled))
+                    {
+                        var hints = ExtendClientAreaChromeHints.NoChrome | ExtendClientAreaChromeHints.OSXThickTitleBar;
+
+                        if (SystemTitleBarEnabled)
+                        {
+                            hints |= ExtendClientAreaChromeHints.SystemChrome;
+                        }
+                        if (PreferSystemChromeEnabled)
+                        {
+                            hints |= ExtendClientAreaChromeHints.PreferSystemChrome;
+                        }
+                        ChromeHints = hints;
+                    }
+                };
+
+            SystemTitleBarEnabled = true;            
+            TitleBarHeight = -1;
+        }        
+        
+        public ExtendClientAreaChromeHints ChromeHints
+        {
+            get { return _chromeHints; }
+            set { this.RaiseAndSetIfChanged(ref _chromeHints, value); }
         }
 
-        public IManagedNotificationManager NotificationManager
+        public bool ExtendClientAreaEnabled
         {
-            get { return _notificationManager; }
-            set { this.RaiseAndSetIfChanged(ref _notificationManager, value); }
+            get { return _extendClientAreaEnabled; }
+            set { this.RaiseAndSetIfChanged(ref _extendClientAreaEnabled, value); }
         }
 
-        public ReactiveCommand<Unit, Unit> ShowCustomManagedNotificationCommand { get; }
+        public bool SystemTitleBarEnabled
+        {
+            get { return _systemTitleBarEnabled; }
+            set { this.RaiseAndSetIfChanged(ref _systemTitleBarEnabled, value); }
+        }
 
-        public ReactiveCommand<Unit, Unit> ShowManagedNotificationCommand { get; }
+        public bool PreferSystemChromeEnabled
+        {
+            get { return _preferSystemChromeEnabled; }
+            set { this.RaiseAndSetIfChanged(ref _preferSystemChromeEnabled, value); }
+        }
 
-        public ReactiveCommand<Unit, Unit> ShowNativeNotificationCommand { get; }
+        public double TitleBarHeight
+        {
+            get { return _titleBarHeight; }
+            set { this.RaiseAndSetIfChanged(ref _titleBarHeight, value); }
+        }
+
+        public WindowState WindowState
+        {
+            get { return _windowState; }
+            set { this.RaiseAndSetIfChanged(ref _windowState, value); }
+        }
+
+        public WindowState[] WindowStates
+        {
+            get { return _windowStates; }
+            set { this.RaiseAndSetIfChanged(ref _windowStates, value); }
+        }
+
+        public bool IsSystemBarVisible
+        {
+            get { return _isSystemBarVisible; }
+            set { this.RaiseAndSetIfChanged(ref _isSystemBarVisible, value); }
+        }
+
+        public bool DisplayEdgeToEdge
+        {
+            get { return _displayEdgeToEdge; }
+            set { this.RaiseAndSetIfChanged(ref _displayEdgeToEdge, value); }
+        }
+        
+        public Thickness SafeAreaPadding
+        {
+            get { return _safeAreaPadding; }
+            set { this.RaiseAndSetIfChanged(ref _safeAreaPadding, value); }
+        }
+
+        public MiniCommand AboutCommand { get; }
+
+        public MiniCommand ExitCommand { get; }
+
+        private DateTime? _validatedDateExample;
+
+        /// <summary>
+        ///    A required DateTime which should demonstrate validation for the DateTimePicker
+        /// </summary>
+        [Required]
+        public DateTime? ValidatedDateExample
+        {
+            get => _validatedDateExample;
+            set => this.RaiseAndSetIfChanged(ref _validatedDateExample, value);
+        }
     }
 }

@@ -1,8 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Data;
+using Avalonia.Interactivity;
 using Avalonia.Utilities;
 
 namespace Avalonia.Controls.Primitives
@@ -12,91 +10,101 @@ namespace Avalonia.Controls.Primitives
     /// </summary>
     public abstract class RangeBase : TemplatedControl
     {
+        private bool _isDataContextChanging;
+        
         /// <summary>
         /// Defines the <see cref="Minimum"/> property.
         /// </summary>
-        public static readonly DirectProperty<RangeBase, double> MinimumProperty =
-            AvaloniaProperty.RegisterDirect<RangeBase, double>(
-                nameof(Minimum),
-                o => o.Minimum,
-                (o, v) => o.Minimum = v);
+        public static readonly StyledProperty<double> MinimumProperty =
+            AvaloniaProperty.Register<RangeBase, double>(nameof(Minimum), coerce: CoerceMinimum);
 
         /// <summary>
         /// Defines the <see cref="Maximum"/> property.
         /// </summary>
-        public static readonly DirectProperty<RangeBase, double> MaximumProperty =
-            AvaloniaProperty.RegisterDirect<RangeBase, double>(
-                nameof(Maximum),
-                o => o.Maximum,
-                (o, v) => o.Maximum = v);
+        public static readonly StyledProperty<double> MaximumProperty =
+            AvaloniaProperty.Register<RangeBase, double>(nameof(Maximum), 100, coerce: CoerceMaximum);
 
         /// <summary>
         /// Defines the <see cref="Value"/> property.
         /// </summary>
-        public static readonly DirectProperty<RangeBase, double> ValueProperty =
-            AvaloniaProperty.RegisterDirect<RangeBase, double>(
-                nameof(Value),
-                o => o.Value,
-                (o, v) => o.Value = v,
-                defaultBindingMode: BindingMode.TwoWay);
+        public static readonly StyledProperty<double> ValueProperty =
+            AvaloniaProperty.Register<RangeBase, double>(nameof(Value),
+                defaultBindingMode: BindingMode.TwoWay,
+                coerce: CoerceValue);
 
         /// <summary>
         /// Defines the <see cref="SmallChange"/> property.
         /// </summary>
         public static readonly StyledProperty<double> SmallChangeProperty =
-            AvaloniaProperty.Register<RangeBase, double>(nameof(SmallChange), 0.1);
+            AvaloniaProperty.Register<RangeBase, double>(nameof(SmallChange), 1);
 
         /// <summary>
         /// Defines the <see cref="LargeChange"/> property.
         /// </summary>
         public static readonly StyledProperty<double> LargeChangeProperty =
-            AvaloniaProperty.Register<RangeBase, double>(nameof(LargeChange), 1);
-
-        private double _minimum;
-        private double _maximum = 100.0;
-        private double _value;
+            AvaloniaProperty.Register<RangeBase, double>(nameof(LargeChange), 10);
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="RangeBase"/> class.
+        /// Defines the <see cref="ValueChanged"/> event.
         /// </summary>
-        public RangeBase()
+        public static readonly RoutedEvent<RangeBaseValueChangedEventArgs> ValueChangedEvent =
+            RoutedEvent.Register<RangeBase, RangeBaseValueChangedEventArgs>(
+                nameof(ValueChanged), RoutingStrategies.Bubble);
+
+        /// <summary>
+        /// Occurs when the <see cref="Value"/> property changes.
+        /// </summary>
+        public event EventHandler<RangeBaseValueChangedEventArgs>? ValueChanged
         {
+            add => AddHandler(ValueChangedEvent, value);
+            remove => RemoveHandler(ValueChangedEvent, value);
         }
 
         /// <summary>
-        /// Gets or sets the minimum value.
+        /// Gets or sets the minimum possible value.
         /// </summary>
         public double Minimum
         {
-            get
-            {
-                return _minimum;
-            }
+            get => GetValue(MinimumProperty);
+            set => SetValue(MinimumProperty, value);
+        }
 
-            set
+        private static double CoerceMinimum(AvaloniaObject sender, double value)
+        {
+            return ValidateDouble(value) ? value : sender.GetValue(MinimumProperty);
+        }
+
+        private void OnMinimumChanged()
+        {
+            if (IsInitialized && !_isDataContextChanging)
             {
-                value = ValidateMinimum(value);
-                SetAndRaise(MinimumProperty, ref _minimum, value);
-                Maximum = ValidateMaximum(Maximum);
-                Value = ValidateValue(Value);
+                CoerceValue(MaximumProperty);
+                CoerceValue(ValueProperty);
             }
         }
 
         /// <summary>
-        /// Gets or sets the maximum value.
+        /// Gets or sets the maximum possible value.
         /// </summary>
         public double Maximum
         {
-            get
-            {
-                return _maximum;
-            }
+            get => GetValue(MaximumProperty);
+            set => SetValue(MaximumProperty, value);
+        }
 
-            set
+        private static double CoerceMaximum(AvaloniaObject sender, double value)
+        {
+            return ValidateDouble(value)
+                ? Math.Max(value, sender.GetValue(MinimumProperty))
+                : sender.GetValue(MaximumProperty);
+        }
+
+        private void OnMaximumChanged()
+        {
+            if (IsInitialized && !_isDataContextChanging)
             {
-                value = ValidateMaximum(value);
-                SetAndRaise(MaximumProperty, ref _maximum, value);
-                Value = ValidateValue(Value);
+                CoerceValue(MinimumProperty);
+                CoerceValue(ValueProperty);
             }
         }
 
@@ -105,74 +113,88 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public double Value
         {
-            get
-            {
-                return _value;
-            }
-
-            set
-            {
-                value = ValidateValue(value);
-                SetAndRaise(ValueProperty, ref _value, value);
-            }
+            get => GetValue(ValueProperty);
+            set => SetValue(ValueProperty, value);
         }
 
+        private static double CoerceValue(AvaloniaObject sender, double value)
+        {
+            return ValidateDouble(value)
+                ? MathUtilities.Clamp(value, sender.GetValue(MinimumProperty), sender.GetValue(MaximumProperty))
+                : sender.GetValue(ValueProperty);
+        }
+
+        /// <summary>
+        /// Gets or sets the small increment value added or subtracted from the <see cref="Value"/>.
+        /// </summary>
         public double SmallChange
         {
             get => GetValue(SmallChangeProperty);
             set => SetValue(SmallChangeProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the large increment value added or subtracted from the <see cref="Value"/>.
+        /// </summary>
         public double LargeChange
         {
             get => GetValue(LargeChangeProperty);
             set => SetValue(LargeChangeProperty, value);
         }
 
-        /// <summary>
-        /// Throws an exception if the double value is NaN or Inf.
-        /// </summary>
-        /// <param name="value">The value.</param>
-        /// <param name="property">The name of the property being set.</param>
-        private static void ValidateDouble(double value, string property)
+        /// <inheritdoc/>
+        protected override void OnInitialized()
         {
-            if (double.IsInfinity(value) || double.IsNaN(value))
+            base.OnInitialized();
+
+            CoerceValue(MaximumProperty);
+            CoerceValue(ValueProperty);
+        }
+
+        /// <inheritdoc/>
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == MinimumProperty)
             {
-                throw new ArgumentException($"{value} is not a valid value for {property}.");
+                OnMinimumChanged();
+            }
+            else if (change.Property == MaximumProperty)
+            {
+                OnMaximumChanged();
+            }
+            else if (change.Property == ValueProperty)
+            {
+                var valueChangedEventArgs = new RangeBaseValueChangedEventArgs(
+                    change.GetOldValue<double>(),
+                    change.GetNewValue<double>(),
+                    ValueChangedEvent);
+                RaiseEvent(valueChangedEventArgs);
             }
         }
-
-        /// <summary>
-        /// Validates the <see cref="Minimum"/> property.
-        /// </summary>
-        /// <param name="value">The value.</param>
-        /// <returns>The coerced value.</returns>
-        private double ValidateMinimum(double value)
+        
+        /// <inheritdoc />
+        protected override void OnDataContextBeginUpdate()
         {
-            ValidateDouble(value, "Minimum");
-            return value;
+            _isDataContextChanging = true;
+            base.OnDataContextBeginUpdate();
+        }
+
+        /// <inheritdoc />
+        protected override void OnDataContextEndUpdate()
+        {
+            base.OnDataContextEndUpdate();
+            _isDataContextChanging = false;
         }
 
         /// <summary>
-        /// Validates/coerces the <see cref="Maximum"/> property.
+        /// Checks if the double value is not infinity nor NaN.
         /// </summary>
         /// <param name="value">The value.</param>
-        /// <returns>The coerced value.</returns>
-        private double ValidateMaximum(double value)
+        private static bool ValidateDouble(double value)
         {
-            ValidateDouble(value, "Maximum");
-            return Math.Max(value, Minimum);
-        }
-
-        /// <summary>
-        /// Validates/coerces the <see cref="Value"/> property.
-        /// </summary>
-        /// <param name="value">The value.</param>
-        /// <returns>The coerced value.</returns>
-        private double ValidateValue(double value)
-        {
-            ValidateDouble(value, "Value");
-            return MathUtilities.Clamp(value, Minimum, Maximum);
+            return !double.IsInfinity(value) && !double.IsNaN(value);
         }
     }
 }

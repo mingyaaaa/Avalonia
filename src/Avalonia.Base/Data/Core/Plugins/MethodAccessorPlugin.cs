@@ -1,88 +1,67 @@
 ﻿using System;
-using System.Linq;
+using System.Diagnostics;
 using System.Reflection;
 
-namespace Avalonia.Data.Core.Plugins
+namespace Avalonia.Data.Core.Plugins;
+
+internal class MethodAccessorPlugin : IPropertyAccessorPlugin
 {
-    class MethodAccessorPlugin : IPropertyAccessorPlugin
+    private readonly MethodInfo _method;
+    private readonly Type _delegateType;
+
+    public MethodAccessorPlugin(MethodInfo method, Type delegateType)
     {
-        public bool Match(object obj, string methodName)
-            => obj.GetType().GetRuntimeMethods().Any(x => x.Name == methodName);
+        _method = method;
+        _delegateType = delegateType;
+    }
 
-        public IPropertyAccessor Start(WeakReference reference, string methodName)
+    public bool Match(object obj, string propertyName)
+    {
+        throw new InvalidOperationException("The MethodAccessorPlugin does not support dynamic matching");
+    }
+
+    public IPropertyAccessor Start(WeakReference<object?> reference, string propertyName)
+    {
+        Debug.Assert(_method.Name == propertyName);
+        return new Accessor(reference, _method, _delegateType);
+    }
+
+    private sealed class Accessor : PropertyAccessorBase
+    {
+        public Accessor(WeakReference<object?> reference, MethodInfo method, Type delegateType)
         {
-            Contract.Requires<ArgumentNullException>(reference != null);
-            Contract.Requires<ArgumentNullException>(methodName != null);
+            _ = reference ?? throw new ArgumentNullException(nameof(reference));
+            _ = method ?? throw new ArgumentNullException(nameof(method));
 
-            var instance = reference.Target;
-            var method = instance.GetType().GetRuntimeMethods().FirstOrDefault(x => x.Name == methodName);
+            PropertyType = delegateType;
 
-            if (method != null)
+            if (method.IsStatic)
             {
-                if (method.GetParameters().Length + (method.ReturnType == typeof(void) ? 0 : 1) > 8)
-                {
-                    var exception = new ArgumentException("Cannot create a binding accessor for a method with more than 8 parameters or more than 7 parameters if it has a non-void return type.", nameof(methodName));
-                    return new PropertyError(new BindingNotification(exception, BindingErrorType.Error));
-                }
-
-                return new Accessor(reference, method);
+                Value = method.CreateDelegate(PropertyType);
             }
-            else
+            else if (reference.TryGetTarget(out var target))
             {
-                var message = $"Could not find CLR method '{methodName}' on '{instance}'";
-                var exception = new MissingMemberException(message);
-                return new PropertyError(new BindingNotification(exception, BindingErrorType.Error));
+                Value = method.CreateDelegate(PropertyType, target);
             }
         }
 
-        private class Accessor : PropertyAccessorBase
+        public override Type? PropertyType { get; }
+
+        public override object? Value { get; }
+
+        public override bool SetValue(object? value, BindingPriority priority) => false;
+
+        protected override void SubscribeCore()
         {
-            public Accessor(WeakReference reference, MethodInfo method)
+            try
             {
-                Contract.Requires<ArgumentNullException>(reference != null);
-                Contract.Requires<ArgumentNullException>(method != null);
-
-                var paramTypes = method.GetParameters().Select(param => param.ParameterType).ToArray();
-                var returnType = method.ReturnType;
-                
-                if (returnType == typeof(void))
-                {
-                    if (paramTypes.Length == 0)
-                    {
-                        PropertyType = typeof(Action);
-                    }
-                    else
-                    {
-                        PropertyType = Type.GetType($"System.Action`{paramTypes.Length}").MakeGenericType(paramTypes); 
-                    }
-                }
-                else
-                {
-                    var genericTypeParameters = paramTypes.Concat(new[] { returnType }).ToArray();
-                    PropertyType = Type.GetType($"System.Func`{genericTypeParameters.Length}").MakeGenericType(genericTypeParameters);
-                }
-                
-                Value = method.IsStatic ? method.CreateDelegate(PropertyType) : method.CreateDelegate(PropertyType, reference.Target);
+                PublishValue(Value);
             }
+            catch { }
+        }
 
-            public override Type PropertyType { get; }
-
-            public override object Value { get; }
-
-            public override bool SetValue(object value, BindingPriority priority) => false;
-
-            protected override void SubscribeCore()
-            {
-                try
-                {
-                    PublishValue(Value);
-                }
-                catch { }
-            }
-
-            protected override void UnsubscribeCore()
-            {
-            }
+        protected override void UnsubscribeCore()
+        {
         }
     }
 }

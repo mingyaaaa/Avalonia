@@ -2,8 +2,8 @@
 
 namespace Avalonia.Direct2D1
 {
-    public interface ILayerFactory
+    internal interface ILayerFactory
     {
-        IRenderTargetBitmapImpl CreateLayer(Size size);
+        IDrawingContextLayerImpl CreateLayer(Size size);
     }
 }

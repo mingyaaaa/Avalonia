@@ -3,21 +3,30 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
+using Avalonia.Controls.Metadata;
+using Avalonia.Controls.Mixins;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
 using System;
 using System.Diagnostics;
-using System.Reactive.Linq;
+using Avalonia.Reactive;
 
 namespace Avalonia.Controls
 {
+    [TemplatePart(DATAGRIDROWGROUPHEADER_expanderButton,      typeof(ToggleButton))]
+    [TemplatePart(DATAGRIDROWGROUPHEADER_indentSpacer,        typeof(Control))]
+    [TemplatePart(DATAGRIDROWGROUPHEADER_itemCountElement,    typeof(TextBlock))]
+    [TemplatePart(DATAGRIDROWGROUPHEADER_propertyNameElement, typeof(TextBlock))]
+    [TemplatePart(DataGridRow.DATAGRIDROW_elementRoot,        typeof(Panel))]
+    [TemplatePart(DataGridRow.DATAGRIDROW_elementRowHeader,   typeof(DataGridRowHeader))]
+    [PseudoClasses(":pressed", ":current", ":expanded")]
     public class DataGridRowGroupHeader : TemplatedControl
     {
-        private const string DATAGRIDROWGROUPHEADER_expanderButton = "ExpanderButton";
-        private const string DATAGRIDROWGROUPHEADER_indentSpacer = "IndentSpacer";
-        private const string DATAGRIDROWGROUPHEADER_itemCountElement = "ItemCountElement";
-        private const string DATAGRIDROWGROUPHEADER_propertyNameElement = "PropertyNameElement";
+        private const string DATAGRIDROWGROUPHEADER_expanderButton = "PART_ExpanderButton";
+        private const string DATAGRIDROWGROUPHEADER_indentSpacer = "PART_IndentSpacer";
+        private const string DATAGRIDROWGROUPHEADER_itemCountElement = "PART_ItemCountElement";
+        private const string DATAGRIDROWGROUPHEADER_propertyNameElement = "PART_PropertyNameElement";
 
         private bool _areIsCheckedHandlersSuspended;
         private ToggleButton _expanderButton;
@@ -40,11 +49,25 @@ namespace Avalonia.Controls
             set { SetValue(IsItemCountVisibleProperty, value); }
         }
 
+
+        public static readonly StyledProperty<string> ItemCountFormatProperty =
+            AvaloniaProperty.Register<DataGridRowGroupHeader, string>(nameof(ItemCountFormat));
+
+        /// <summary>
+        /// Gets or sets a value that indicates number format of items count
+        /// </summary>
+        public string ItemCountFormat
+        {
+            get { return GetValue(ItemCountFormatProperty); }
+            set { SetValue(ItemCountFormatProperty, value); }
+        }
+
+
         public static readonly StyledProperty<string> PropertyNameProperty =
             AvaloniaProperty.Register<DataGridRowGroupHeader, string>(nameof(PropertyName));
 
         /// <summary>
-        /// Gets or sets the name of the property that this <see cref="T:Avalonia.Controls.DataGrid" /> row is bound to. 
+        /// Gets or sets the name of the property that this <see cref="T:Avalonia.Controls.DataGrid" /> row is bound to.
         /// </summary>
         public string PropertyName
         {
@@ -68,30 +91,16 @@ namespace Avalonia.Controls
             AvaloniaProperty.Register<DataGridRowGroupHeader, double>(
                 nameof(SublevelIndent),
                 defaultValue: DataGrid.DATAGRID_defaultRowGroupSublevelIndent,
-                validate: ValidateSublevelIndent);
+                validate: IsValidSublevelIndent);
 
-        private static double ValidateSublevelIndent(DataGridRowGroupHeader header, double value)
+        private static bool IsValidSublevelIndent(double value)
         {
-            // We don't need to revert to the old value if our input is bad because we never read this property value
-            if (double.IsNaN(value))
-            {
-                throw DataGridError.DataGrid.ValueCannotBeSetToNAN(nameof(SublevelIndent));
-            }
-            else if (double.IsInfinity(value))
-            {
-                throw DataGridError.DataGrid.ValueCannotBeSetToInfinity(nameof(SublevelIndent));
-            }
-            else if (value < 0)
-            {
-                throw DataGridError.DataGrid.ValueMustBeGreaterThanOrEqualTo(nameof(value), nameof(SublevelIndent), 0);
-            }
-
-            return value;
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0;
         }
 
         /// <summary>
-        /// Gets or sets a value that indicates the amount that the 
-        /// children of the <see cref="T:Avalonia.Controls.RowGroupHeader" /> are indented. 
+        /// Gets or sets a value that indicates the amount that the
+        /// children of the <see cref="T:Avalonia.Controls.RowGroupHeader" /> are indented.
         /// </summary>
         public double SublevelIndent
         {
@@ -109,7 +118,9 @@ namespace Avalonia.Controls
 
         static DataGridRowGroupHeader()
         {
-            SublevelIndentProperty.Changed.AddClassHandler<DataGridRowGroupHeader>(x => x.OnSublevelIndentChanged);
+            SublevelIndentProperty.Changed.AddClassHandler<DataGridRowGroupHeader>((x,e) => x.OnSublevelIndentChanged(e));
+            PressedMixin.Attach<DataGridRowGroupHeader>();
+            IsTabStopProperty.OverrideDefaultValue<DataGridRowGroupHeader>(false);
         }
 
         /// <summary>
@@ -117,7 +128,6 @@ namespace Avalonia.Controls
         /// </summary>
         public DataGridRowGroupHeader()
         {
-            //DefaultStyleKey = typeof(DataGridRowGroupHeader);
             AddHandler(InputElement.PointerPressedEvent, (s, e) => DataGridRowGroupHeader_PointerPressed(e), handledEventsToo: true);
         }
 
@@ -182,7 +192,7 @@ namespace Avalonia.Controls
 
         private IDisposable _expanderButtonSubscription;
 
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
             _rootElement = e.NameScope.Find<Panel>(DataGridRow.DATAGRIDROW_elementRoot);
 
@@ -213,22 +223,24 @@ namespace Avalonia.Controls
             _itemCountElement = e.NameScope.Find<TextBlock>(DATAGRIDROWGROUPHEADER_itemCountElement);
             _propertyNameElement = e.NameScope.Find<TextBlock>(DATAGRIDROWGROUPHEADER_propertyNameElement);
             UpdateTitleElements();
-
-            base.OnTemplateApplied(e);
         }
 
         internal void ApplyHeaderStatus()
         {
             if (_headerElement != null && OwningGrid.AreRowHeadersVisible)
             {
-                _headerElement.ApplyOwnerStatus();
+                _headerElement.UpdatePseudoClasses();
             }
         }
 
-        //TODO Implement
-        internal void ApplyState(bool useTransitions)
+        internal void UpdatePseudoClasses()
         {
+            PseudoClasses.Set(":current", IsCurrent);
 
+            if (RowGroupInfo?.CollectionViewGroup != null)
+            {
+                PseudoClasses.Set(":expanded", RowGroupInfo.IsVisible && RowGroupInfo.CollectionViewGroup.ItemCount > 0);
+            }
         }
 
         protected override Size ArrangeOverride(Size finalSize)
@@ -291,7 +303,11 @@ namespace Avalonia.Controls
         //TODO TabStop
         private void DataGridRowGroupHeader_PointerPressed(PointerPressedEventArgs e)
         {
-            if (OwningGrid != null && e.MouseButton == MouseButton.Left)
+            if (OwningGrid == null)
+            {
+                return;
+            }
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
                 if (OwningGrid.IsDoubleClickRecordsClickOnCall(this) && !e.Handled)
                 {
@@ -300,14 +316,22 @@ namespace Avalonia.Controls
                 }
                 else
                 {
-                    //if (!e.Handled && OwningGrid.IsTabStop)
-                    if (!e.Handled)
+                    if (!e.Handled && OwningGrid.IsTabStop)
                     {
                         OwningGrid.Focus();
                     }
                     e.Handled = OwningGrid.UpdateStateOnMouseLeftButtonDown(e, OwningGrid.CurrentColumnIndex, RowGroupInfo.Slot, allowEdit: false);
                 }
             }
+            else if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+            {
+                if (!e.Handled)
+                {
+                    OwningGrid.Focus();
+                }
+                e.Handled = OwningGrid.UpdateStateOnMouseRightButtonDown(e, OwningGrid.CurrentColumnIndex, RowGroupInfo.Slot, allowEdit: false);
+            }
+
         }
 
         private void EnsureChildClip(Visual child, double frozenLeftEdge)
@@ -317,9 +341,9 @@ namespace Avalonia.Controls
             {
                 double xClip = Math.Round(frozenLeftEdge - childLeftEdge);
                 var rg = new RectangleGeometry();
-                rg.Rect = 
-                    new Rect(xClip, 0, 
-                        Math.Max(0, child.Bounds.Width - xClip), 
+                rg.Rect =
+                    new Rect(xClip, 0,
+                        Math.Max(0, child.Bounds.Width - xClip),
                         child.Bounds.Height);
                 child.Clip = rg;
             }
@@ -338,13 +362,11 @@ namespace Avalonia.Controls
             }
         }
 
-        //TODO Styles
-        //internal void EnsureHeaderStyleAndVisibility(Style previousStyle)
         internal void EnsureHeaderVisibility()
         {
             if (_headerElement != null && OwningGrid != null)
             {
-                _headerElement.IsVisible = OwningGrid.AreColumnHeadersVisible;
+                _headerElement.IsVisible = OwningGrid.AreRowHeadersVisible;
             }
         }
 
@@ -360,30 +382,30 @@ namespace Avalonia.Controls
         {
             EnsureExpanderButtonIsChecked();
             EnsureHeaderVisibility();
-            ApplyState(useTransitions: false);
+            UpdatePseudoClasses();
             ApplyHeaderStatus();
         }
 
-        protected override void OnPointerEnter(PointerEventArgs e)
+        protected override void OnPointerEntered(PointerEventArgs e)
         {
             if (IsEnabled)
             {
                 IsMouseOver = true;
-                ApplyState(useTransitions: true);
+                UpdatePseudoClasses();
             }
 
-            base.OnPointerEnter(e);
+            base.OnPointerEntered(e);
         }
 
-        protected override void OnPointerLeave(PointerEventArgs e)
+        protected override void OnPointerExited(PointerEventArgs e)
         {
             if (IsEnabled)
             {
                 IsMouseOver = false;
-                ApplyState(useTransitions: true);
+                UpdatePseudoClasses();
             }
 
-            base.OnPointerLeave(e);
+            base.OnPointerExited(e);
         }
 
         private void SetIsCheckedNoCallBack(bool value)
@@ -418,7 +440,7 @@ namespace Avalonia.Controls
 
                 EnsureExpanderButtonIsChecked();
 
-                ApplyState(true /*useTransitions*/);
+                UpdatePseudoClasses();
             }
         }
 
@@ -436,10 +458,10 @@ namespace Avalonia.Controls
             if (_itemCountElement != null && RowGroupInfo != null && RowGroupInfo.CollectionViewGroup != null)
             {
                 string formatString;
-                if(RowGroupInfo.CollectionViewGroup.ItemCount == 1)
-                    formatString = "({0} Item)";
+                if (RowGroupInfo.CollectionViewGroup.ItemCount == 1)
+                    formatString = (ItemCountFormat == null ? "({0} Item)" : ItemCountFormat);
                 else
-                    formatString = "({0} Items)";
+                    formatString = (ItemCountFormat == null ? "({0} Items)" : ItemCountFormat);
 
                 _itemCountElement.Text = String.Format(formatString, RowGroupInfo.CollectionViewGroup.ItemCount);
             }

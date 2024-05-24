@@ -1,24 +1,22 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
+﻿using System;
 
 namespace Avalonia.Data
 {
     /// <summary>
     /// An exception returned through <see cref="BindingNotification"/> signaling that a
-    /// requested binding expression could not be evaluated because of a null in one of the links
-    /// of the binding chain.
+    /// requested binding expression could not be evaluated because of an error in one of
+    /// the links of the binding chain.
     /// </summary>
     public class BindingChainException : Exception
     {
-        private string _message;
+        private readonly string _message;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BindingChainException"/> class.
         /// </summary>
         public BindingChainException()
         {
+            _message = "Binding error";
         }
 
         /// <summary>
@@ -48,12 +46,12 @@ namespace Avalonia.Data
         /// <summary>
         /// Gets the expression that could not be evaluated.
         /// </summary>
-        public string Expression { get; protected set; }
+        public string? Expression { get; protected set; }
 
         /// <summary>
         /// Gets the point in the expression at which the error occurred.
         /// </summary>
-        public string ExpressionErrorPoint { get; protected set; }
+        public string? ExpressionErrorPoint { get; protected set; }
 
         /// <inheritdoc/>
         public override string Message
@@ -62,15 +60,15 @@ namespace Avalonia.Data
             {
                 if (Expression != null && ExpressionErrorPoint != null)
                 {
-                    return $"{_message} in expression '{Expression}' at '{ExpressionErrorPoint}'.";
+                    return $"An error occured binding to '{Expression}' at '{ExpressionErrorPoint}': '{_message}'";
                 }
-                else if (ExpressionErrorPoint != null)
+                else if (Expression != null)
                 {
-                    return $"{_message} in expression '{ExpressionErrorPoint}'.";
+                    return $"An error occured binding to '{Expression}': '{_message}'";
                 }
                 else
                 {
-                    return $"{_message} in expression.";
+                    return $"An error occured in a binding: '{_message}'";
                 }
             }
         }

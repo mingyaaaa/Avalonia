@@ -1,8 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using System.Reactive.Linq;
+using Avalonia.Reactive;
+using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 
 namespace Avalonia.Controls
 {
@@ -13,8 +11,19 @@ namespace Avalonia.Controls
     {
         public ComboBoxItem()
         {
-            this.GetObservable(ComboBoxItem.IsFocusedProperty).Where(focused => focused)
-                .Subscribe(_ => (Parent as ComboBox)?.ItemFocused(this));
+            this.GetObservable(ComboBoxItem.IsFocusedProperty)
+                .Subscribe(focused =>
+                {
+                    if (focused)
+                    {
+                        (Parent as ComboBox)?.ItemFocused(this);
+                    }
+                });
+        }
+
+        static ComboBoxItem()
+        {
+            AutomationProperties.ControlTypeOverrideProperty.OverrideDefaultValue<ComboBoxItem>(AutomationControlType.ComboBoxItem);
         }
     }
 }

@@ -1,12 +1,11 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
 using Avalonia.Logging;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.PropertyStore;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 
@@ -15,18 +14,24 @@ namespace Avalonia.Controls.Primitives
     /// <summary>
     /// A lookless control whose visual appearance is defined by its <see cref="Template"/>.
     /// </summary>
-    public class TemplatedControl : Control, ITemplatedControl
+    public class TemplatedControl : Control
     {
         /// <summary>
         /// Defines the <see cref="Background"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> BackgroundProperty =
+        public static readonly StyledProperty<IBrush?> BackgroundProperty =
             Border.BackgroundProperty.AddOwner<TemplatedControl>();
+
+        /// <summary>
+        /// Defines the <see cref="BackgroundSizing"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BackgroundSizing> BackgroundSizingProperty =
+            Border.BackgroundSizingProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
         /// Defines the <see cref="BorderBrush"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> BorderBrushProperty =
+        public static readonly StyledProperty<IBrush?> BorderBrushProperty =
             Border.BorderBrushProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
@@ -36,34 +41,52 @@ namespace Avalonia.Controls.Primitives
             Border.BorderThicknessProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
+        /// Defines the <see cref="CornerRadius"/> property.
+        /// </summary>
+        public static readonly StyledProperty<CornerRadius> CornerRadiusProperty =
+            Border.CornerRadiusProperty.AddOwner<TemplatedControl>();
+
+        /// <summary>
         /// Defines the <see cref="FontFamily"/> property.
         /// </summary>
         public static readonly StyledProperty<FontFamily> FontFamilyProperty =
-            TextBlock.FontFamilyProperty.AddOwner<TemplatedControl>();
+            TextElement.FontFamilyProperty.AddOwner<TemplatedControl>();
 
+        /// <summary>
+        /// Defines the <see cref="FontFeaturesProperty"/> property.
+        /// </summary>
+        public static readonly StyledProperty<FontFeatureCollection?> FontFeaturesProperty =
+            TextElement.FontFeaturesProperty.AddOwner<TemplatedControl>();
+        
         /// <summary>
         /// Defines the <see cref="FontSize"/> property.
         /// </summary>
         public static readonly StyledProperty<double> FontSizeProperty =
-            TextBlock.FontSizeProperty.AddOwner<TemplatedControl>();
+            TextElement.FontSizeProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
         /// Defines the <see cref="FontStyle"/> property.
         /// </summary>
         public static readonly StyledProperty<FontStyle> FontStyleProperty =
-            TextBlock.FontStyleProperty.AddOwner<TemplatedControl>();
+            TextElement.FontStyleProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
         /// Defines the <see cref="FontWeight"/> property.
         /// </summary>
         public static readonly StyledProperty<FontWeight> FontWeightProperty =
-            TextBlock.FontWeightProperty.AddOwner<TemplatedControl>();
+            TextElement.FontWeightProperty.AddOwner<TemplatedControl>();
+
+        /// <summary>
+        /// Defines the <see cref="FontWeight"/> property.
+        /// </summary>
+        public static readonly StyledProperty<FontStretch> FontStretchProperty =
+            TextElement.FontStretchProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
         /// Defines the <see cref="Foreground"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> ForegroundProperty =
-            TextBlock.ForegroundProperty.AddOwner<TemplatedControl>();
+        public static readonly StyledProperty<IBrush?> ForegroundProperty =
+            TextElement.ForegroundProperty.AddOwner<TemplatedControl>();
 
         /// <summary>
         /// Defines the <see cref="Padding"/> property.
@@ -74,8 +97,8 @@ namespace Avalonia.Controls.Primitives
         /// <summary>
         /// Defines the <see cref="Template"/> property.
         /// </summary>
-        public static readonly StyledProperty<IControlTemplate> TemplateProperty =
-            AvaloniaProperty.Register<TemplatedControl, IControlTemplate>(nameof(Template));
+        public static readonly StyledProperty<IControlTemplate?> TemplateProperty =
+            AvaloniaProperty.Register<TemplatedControl, IControlTemplate?>(nameof(Template));
 
         /// <summary>
         /// Defines the IsTemplateFocusTarget attached property.
@@ -88,10 +111,10 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public static readonly RoutedEvent<TemplateAppliedEventArgs> TemplateAppliedEvent =
             RoutedEvent.Register<TemplatedControl, TemplateAppliedEventArgs>(
-                "TemplateApplied", 
+                nameof(TemplateApplied), 
                 RoutingStrategies.Direct);
 
-        private IControlTemplate _appliedTemplate;
+        private IControlTemplate? _appliedTemplate;
 
         /// <summary>
         /// Initializes static members of the <see cref="TemplatedControl"/> class.
@@ -99,34 +122,43 @@ namespace Avalonia.Controls.Primitives
         static TemplatedControl()
         {
             ClipToBoundsProperty.OverrideDefaultValue<TemplatedControl>(true);
-            TemplateProperty.Changed.AddClassHandler<TemplatedControl>(x => x.OnTemplateChanged);
+            TemplateProperty.Changed.AddClassHandler<TemplatedControl>((x, e) => x.OnTemplateChanged(e));
         }
 
         /// <summary>
         /// Raised when the control's template is applied.
         /// </summary>
-        public event EventHandler<TemplateAppliedEventArgs> TemplateApplied
+        public event EventHandler<TemplateAppliedEventArgs>? TemplateApplied
         {
-            add { AddHandler(TemplateAppliedEvent, value); }
-            remove { RemoveHandler(TemplateAppliedEvent, value); }
+            add => AddHandler(TemplateAppliedEvent, value);
+            remove => RemoveHandler(TemplateAppliedEvent, value);
         }
 
         /// <summary>
         /// Gets or sets the brush used to draw the control's background.
         /// </summary>
-        public IBrush Background
+        public IBrush? Background
         {
-            get { return GetValue(BackgroundProperty); }
-            set { SetValue(BackgroundProperty, value); }
+            get => GetValue(BackgroundProperty);
+            set => SetValue(BackgroundProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets how the control's background is drawn relative to the control's border.
+        /// </summary>
+        public BackgroundSizing BackgroundSizing
+        {
+            get => GetValue(BackgroundSizingProperty);
+            set => SetValue(BackgroundSizingProperty, value);
         }
 
         /// <summary>
         /// Gets or sets the brush used to draw the control's border.
         /// </summary>
-        public IBrush BorderBrush
+        public IBrush? BorderBrush
         {
-            get { return GetValue(BorderBrushProperty); }
-            set { SetValue(BorderBrushProperty, value); }
+            get => GetValue(BorderBrushProperty);
+            set => SetValue(BorderBrushProperty, value);
         }
 
         /// <summary>
@@ -134,8 +166,17 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public Thickness BorderThickness
         {
-            get { return GetValue(BorderThicknessProperty); }
-            set { SetValue(BorderThicknessProperty, value); }
+            get => GetValue(BorderThicknessProperty);
+            set => SetValue(BorderThicknessProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the radius of the border rounded corners.
+        /// </summary>
+        public CornerRadius CornerRadius
+        {
+            get => GetValue(CornerRadiusProperty);
+            set => SetValue(CornerRadiusProperty, value);
         }
 
         /// <summary>
@@ -143,8 +184,17 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public FontFamily FontFamily
         {
-            get { return GetValue(FontFamilyProperty); }
-            set { SetValue(FontFamilyProperty, value); }
+            get => GetValue(FontFamilyProperty);
+            set => SetValue(FontFamilyProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the font features turned on/off.
+        /// </summary>
+        public FontFeatureCollection? FontFeatures
+        {
+            get => GetValue(FontFeaturesProperty);
+            set => SetValue(FontFeaturesProperty, value);
         }
 
         /// <summary>
@@ -152,8 +202,8 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public double FontSize
         {
-            get { return GetValue(FontSizeProperty); }
-            set { SetValue(FontSizeProperty, value); }
+            get => GetValue(FontSizeProperty);
+            set => SetValue(FontSizeProperty, value);
         }
 
         /// <summary>
@@ -161,8 +211,8 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public FontStyle FontStyle
         {
-            get { return GetValue(FontStyleProperty); }
-            set { SetValue(FontStyleProperty, value); }
+            get => GetValue(FontStyleProperty);
+            set => SetValue(FontStyleProperty, value);
         }
 
         /// <summary>
@@ -170,17 +220,26 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public FontWeight FontWeight
         {
-            get { return GetValue(FontWeightProperty); }
-            set { SetValue(FontWeightProperty, value); }
+            get => GetValue(FontWeightProperty);
+            set => SetValue(FontWeightProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the font stretch used to draw the control's text.
+        /// </summary>
+        public FontStretch FontStretch
+        {
+            get => GetValue(FontStretchProperty);
+            set => SetValue(FontStretchProperty, value);
         }
 
         /// <summary>
         /// Gets or sets the brush used to draw the control's text and other foreground elements.
         /// </summary>
-        public IBrush Foreground
+        public IBrush? Foreground
         {
-            get { return GetValue(ForegroundProperty); }
-            set { SetValue(ForegroundProperty, value); }
+            get => GetValue(ForegroundProperty);
+            set => SetValue(ForegroundProperty, value);
         }
 
         /// <summary>
@@ -188,17 +247,17 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         public Thickness Padding
         {
-            get { return GetValue(PaddingProperty); }
-            set { SetValue(PaddingProperty, value); }
+            get => GetValue(PaddingProperty);
+            set => SetValue(PaddingProperty, value);
         }
 
         /// <summary>
         /// Gets or sets the template that defines the control's appearance.
         /// </summary>
-        public IControlTemplate Template
+        public IControlTemplate? Template
         {
-            get { return GetValue(TemplateProperty); }
-            set { SetValue(TemplateProperty, value); }
+            get => GetValue(TemplateProperty);
+            set => SetValue(TemplateProperty, value);
         }
 
         /// <summary>
@@ -246,7 +305,7 @@ namespace Avalonia.Controls.Primitives
                 {
                     foreach (var child in this.GetTemplateChildren())
                     {
-                        child.SetValue(TemplatedParentProperty, null);
+                        child.TemplatedParent = null;
                         ((ISetLogicalParent)child).SetParent(null);
                     }
 
@@ -255,17 +314,19 @@ namespace Avalonia.Controls.Primitives
 
                 if (template != null)
                 {
-                    Logger.Verbose(LogArea.Control, this, "Creating control template");
+                    Logger.TryGet(LogEventLevel.Verbose, LogArea.Control)?.Log(this, "Creating control template");
 
-                    var child = template.Build(this);
-                    var nameScope = new NameScope();
-                    NameScope.SetNameScope((Control)child, nameScope);
-                    ApplyTemplatedParent(child);
-                    RegisterNames(child, nameScope);
-                    ((ISetLogicalParent)child).SetParent(this);
-                    VisualChildren.Add(child);
+                    if (template.Build(this) is { } templateResult)
+                    {
+                        var (child, nameScope) = templateResult;
+                        ApplyTemplatedParent(child, this);
+                        ((ISetLogicalParent)child).SetParent(this);
+                        VisualChildren.Add(child);
 
-                    OnTemplateApplied(new TemplateAppliedEventArgs(nameScope));
+                        var e = new TemplateAppliedEventArgs(nameScope);
+                        OnApplyTemplate(e);
+                        RaiseEvent(e);
+                    }
                 }
 
                 _appliedTemplate = template;
@@ -273,7 +334,7 @@ namespace Avalonia.Controls.Primitives
         }
 
         /// <inheritdoc/>
-        protected override IControl GetTemplateFocusTarget()
+        protected override Control GetTemplateFocusTarget()
         {
             foreach (Control child in this.GetTemplateChildren())
             {
@@ -284,6 +345,22 @@ namespace Avalonia.Controls.Primitives
             }
 
             return this;
+        }
+
+        /// <inheritdoc />
+        internal sealed override void NotifyChildResourcesChanged(ResourcesChangedEventArgs e)
+        {
+            var count = VisualChildren.Count;
+
+            for (var i = 0; i < count; ++i)
+            {
+                if (VisualChildren[i] is ILogical logical)
+                {
+                    logical.NotifyResourcesChanged(e);
+                }
+            }
+
+            base.NotifyChildResourcesChanged(e);
         }
 
         /// <inheritdoc/>
@@ -310,11 +387,11 @@ namespace Avalonia.Controls.Primitives
 
         /// <summary>
         /// Called when the control's template is applied.
+        /// In simple terms, this means the method is called just before the control is displayed.
         /// </summary>
         /// <param name="e">The event args.</param>
-        protected virtual void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected virtual void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            RaiseEvent(e);
         }
 
         /// <summary>
@@ -330,36 +407,34 @@ namespace Avalonia.Controls.Primitives
         /// Sets the TemplatedParent property for the created template children.
         /// </summary>
         /// <param name="control">The control.</param>
-        private void ApplyTemplatedParent(IControl control)
+        /// <param name="templatedParent">The templated parent to apply.</param>
+        internal static void ApplyTemplatedParent(StyledElement control, AvaloniaObject? templatedParent)
         {
-            control.SetValue(TemplatedParentProperty, this);
+            control.TemplatedParent = templatedParent;
 
-            foreach (var child in control.LogicalChildren)
+            var children = control.LogicalChildren;
+            var count = children.Count;
+
+            for (var i = 0; i < count; i++)
             {
-                if (child is IControl c)
+                if (children[i] is StyledElement child && child.TemplatedParent is null)
                 {
-                    ApplyTemplatedParent(c);
+                    ApplyTemplatedParent(child, templatedParent);
                 }
             }
         }
 
-        /// <summary>
-        /// Registers each control with its name scope.
-        /// </summary>
-        /// <param name="control">The control.</param>
-        /// <param name="nameScope">The name scope.</param>
-        private void RegisterNames(IControl control, INameScope nameScope)
+        private protected override void OnControlThemeChanged()
         {
-            if (control.Name != null)
-            {
-                nameScope.Register(control.Name, control);
-            }
+            base.OnControlThemeChanged();
 
-            if (control.TemplatedParent == this)
+            var count = VisualChildren.Count;
+            for (var i = 0; i < count; ++i)
             {
-                foreach (IControl child in control.GetLogicalChildren())
+                if (VisualChildren[i] is StyledElement child &&
+                    child.TemplatedParent == this)
                 {
-                    RegisterNames(child, nameScope);
+                    child.OnTemplatedParentControlThemeChanged();
                 }
             }
         }

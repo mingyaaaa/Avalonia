@@ -1,12 +1,11 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Data;
 
 namespace Avalonia.Controls.Shapes
 {
-    public class Polyline: Shape
+    public class Polyline : Shape
     {
         public static readonly StyledProperty<IList<Point>> PointsProperty =
             AvaloniaProperty.Register<Polyline, IList<Point>>("Points");
@@ -17,15 +16,20 @@ namespace Avalonia.Controls.Shapes
             AffectsGeometry<Polyline>(PointsProperty);
         }
 
+        public Polyline()
+        {
+            SetValue(PointsProperty, new Points(), BindingPriority.Template);
+        }
+
         public IList<Point> Points
         {
-            get { return GetValue(PointsProperty); }
-            set { SetValue(PointsProperty, value); }
+            get => GetValue(PointsProperty);
+            set => SetValue(PointsProperty, value);
         }
 
         protected override Geometry CreateDefiningGeometry()
         {
-            return new PolylineGeometry(Points, false);
+            return new PolylineGeometry { Points = Points, IsFilled = false };
         }
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Platform;
 using SharpDX.Direct2D1;
 
@@ -9,7 +6,7 @@ namespace Avalonia.Direct2D1.Media
     /// <summary>
     /// A Direct2D implementation of a <see cref="Avalonia.Media.StreamGeometry"/>.
     /// </summary>
-    public class StreamGeometryImpl : GeometryImpl, IStreamGeometryImpl
+    internal class StreamGeometryImpl : GeometryImpl, IStreamGeometryImpl
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="StreamGeometryImpl"/> class.
@@ -32,9 +29,12 @@ namespace Avalonia.Direct2D1.Media
         public IStreamGeometryImpl Clone()
         {
             var result = new PathGeometry(Direct2D1Platform.Direct2D1Factory);
-            var sink = result.Open();
-            ((PathGeometry)Geometry).Stream(sink);
-            sink.Close();
+            using (var sink = result.Open())
+            {
+                ((PathGeometry)Geometry).Stream(sink);
+                sink.Close();
+            }
+
             return new StreamGeometryImpl(result);
         }
 

@@ -1,201 +1,115 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Runtime.CompilerServices;
+using Avalonia.Automation.Peers;
+using Avalonia.Controls.Automation.Peers;
 using Avalonia.Controls.Primitives;
+using Avalonia.Reactive;
 using Avalonia.Rendering;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
 {
-    public class RadioButton : ToggleButton
+    /// <summary>
+    /// Represents a button that allows a user to select a single option from a group of options.
+    /// </summary>
+    public class RadioButton : ToggleButton, IRadioButton
     {
-        private class RadioButtonGroupManager
+        /// <summary>
+        /// Identifies the GroupName dependency property.
+        /// </summary>
+        public static readonly StyledProperty<string?> GroupNameProperty =
+            AvaloniaProperty.Register<RadioButton, string?>(nameof(GroupName));
+
+        private RadioButtonGroupManager? _groupManager;
+
+        /// <summary>
+        /// Gets or sets the name that specifies which RadioButton controls are mutually exclusive.
+        /// </summary>
+        public string? GroupName
         {
-            public static readonly RadioButtonGroupManager Default = new RadioButtonGroupManager();
-            static readonly ConditionalWeakTable<IRenderRoot, RadioButtonGroupManager> s_registeredVisualRoots
-                = new ConditionalWeakTable<IRenderRoot, RadioButtonGroupManager>();
-            
-            readonly Dictionary<string, List<WeakReference<RadioButton>>> s_registeredGroups
-                = new Dictionary<string, List<WeakReference<RadioButton>>>();
-
-            public static RadioButtonGroupManager GetOrCreateForRoot(IRenderRoot root)
-            {
-                if (root == null)
-                    return Default;
-                return s_registeredVisualRoots.GetValue(root, key => new RadioButtonGroupManager());
-            }
-
-            public void Add(RadioButton radioButton)
-            {
-                lock (s_registeredGroups)
-                {
-                    string groupName = radioButton.GroupName;
-                    if (!s_registeredGroups.TryGetValue(groupName, out var group))
-                    {
-                        group = new List<WeakReference<RadioButton>>();
-                        s_registeredGroups.Add(groupName, group);
-                    }
-                    group.Add(new WeakReference<RadioButton>(radioButton));
-                }
-            }
-
-            public void Remove(RadioButton radioButton, string oldGroupName)
-            {
-                lock (s_registeredGroups)
-                {
-                    if (!string.IsNullOrEmpty(oldGroupName) && s_registeredGroups.TryGetValue(oldGroupName, out var group))
-                    {
-                        int i = 0;
-                        while (i < group.Count)
-                        {
-                            if (!group[i].TryGetTarget(out var button) || button == radioButton)
-                            {
-                                group.RemoveAt(i);
-                                continue;
-                            }
-                            i++;
-                        }
-                        if (group.Count == 0)
-                        {
-                            s_registeredGroups.Remove(oldGroupName);
-                        }
-                    }
-                }
-            }
-
-            public void SetChecked(RadioButton radioButton)
-            {
-                lock (s_registeredGroups)
-                {
-                    string groupName = radioButton.GroupName;
-                    if (s_registeredGroups.TryGetValue(groupName, out var group))
-                    {
-                        int i = 0;
-                        while (i < group.Count)
-                        {
-                            if (!group[i].TryGetTarget(out var current))
-                            {
-                                group.RemoveAt(i);
-                                continue;
-                            }
-                            if (current != radioButton && current.IsChecked.GetValueOrDefault())
-                                current.IsChecked = false;
-                            i++;
-                        }
-                        if (group.Count == 0)
-                        {
-                            s_registeredGroups.Remove(groupName);
-                        }
-                    }
-                }
-            }
+            get => GetValue(GroupNameProperty);
+            set => SetValue(GroupNameProperty, value);
         }
 
-        public static readonly DirectProperty<RadioButton, string> GroupNameProperty =
-            AvaloniaProperty.RegisterDirect<RadioButton, string>(
-                nameof(GroupName),
-                o => o.GroupName,
-                (o, v) => o.GroupName = v);
-
-        private string _groupName;
-        private RadioButtonGroupManager _groupManager;
-
-        public RadioButton()
+        bool IRadioButton.IsChecked
         {
-            this.GetObservable(IsCheckedProperty).Subscribe(IsCheckedChanged);
+            get => IsChecked.GetValueOrDefault();
+            set => SetCurrentValue(IsCheckedProperty, value);
         }
 
-        public string GroupName
-        {
-            get { return _groupName; }
-            set { SetGroupName(value); }
-        }
+        MenuItemToggleType IRadioButton.ToggleType => MenuItemToggleType.Radio;
 
         protected override void Toggle()
         {
             if (!IsChecked.GetValueOrDefault())
             {
-                IsChecked = true;
+                SetCurrentValue(IsCheckedProperty, true);
             }
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
-            if (!string.IsNullOrEmpty(GroupName))
-            {
-                var manager = RadioButtonGroupManager.GetOrCreateForRoot(e.Root);
-                if (manager != _groupManager)
-                {
-                    _groupManager.Remove(this, _groupName);
-                    _groupManager = manager;
-                    manager.Add(this);
-                }
-            }
+            _groupManager?.Remove(this, GroupName);
+            EnsureRadioGroupManager(e.Root);
             base.OnAttachedToVisualTree(e);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
-            if (!string.IsNullOrEmpty(GroupName) && _groupManager != null)
+
+            _groupManager?.Remove(this, GroupName);
+            _groupManager = null;
+        }
+
+        protected override AutomationPeer OnCreateAutomationPeer()
+        {
+            return new RadioButtonAutomationPeer(this);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == IsCheckedProperty)
             {
-                _groupManager.Remove(this, _groupName);
+                IsCheckedChanged(change.GetNewValue<bool?>());
+            }
+            else if (change.Property == GroupNameProperty)
+            {
+                var (oldValue, newValue) = change.GetOldAndNewValue<string?>();
+                OnGroupNameChanged(oldValue, newValue);
             }
         }
 
-        private void SetGroupName(string newGroupName)
+        private void OnGroupNameChanged(string? oldGroupName, string? newGroupName)
         {
-            string oldGroupName = GroupName;
-            if (newGroupName != oldGroupName)
+            if (!string.IsNullOrEmpty(oldGroupName))
             {
-                if (!string.IsNullOrEmpty(oldGroupName) && _groupManager != null)
-                {
-                    _groupManager.Remove(this, oldGroupName);
-                }
-                _groupName = newGroupName;
-                if (!string.IsNullOrEmpty(newGroupName))
-                {
-                    if (_groupManager == null)
-                    {
-                        _groupManager = RadioButtonGroupManager.GetOrCreateForRoot(this.GetVisualRoot());
-                    }
-                    _groupManager.Add(this);
-                }
+                _groupManager?.Remove(this, oldGroupName);
+            }
+            if (!string.IsNullOrEmpty(newGroupName))
+            {
+                EnsureRadioGroupManager();
             }
         }
 
-        private void IsCheckedChanged(bool? value)
+        private new void IsCheckedChanged(bool? value)
         {
-            string groupName = GroupName;
-            if (string.IsNullOrEmpty(groupName))
+            if (value.GetValueOrDefault())
             {
-                var parent = this.GetVisualParent();
-
-                if (value.GetValueOrDefault() && parent != null)
-                {
-                    var siblings = parent
-                        .GetVisualChildren()
-                        .OfType<RadioButton>()
-                        .Where(x => x != this);
-                    
-                    foreach (var sibling in siblings)
-                    {
-                        if (sibling.IsChecked.GetValueOrDefault())
-                            sibling.IsChecked = false;
-                    }
-                }
+                EnsureRadioGroupManager();
+                _groupManager.OnCheckedChanged(this);
             }
-            else
-            {
-                if (value.GetValueOrDefault() && _groupManager != null)
-                {
-                    _groupManager.SetChecked(this);
-                }
-            }
+        }
+        
+        [MemberNotNull(nameof(_groupManager))]
+        private void EnsureRadioGroupManager(IRenderRoot? root = null)
+        {
+            _groupManager = RadioButtonGroupManager.GetOrCreateForRoot(root ?? this.GetVisualRoot());
+            _groupManager.Add(this);
         }
     }
 }

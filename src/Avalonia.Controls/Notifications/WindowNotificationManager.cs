@@ -1,12 +1,11 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Primitives;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Controls.Notifications
@@ -14,9 +13,12 @@ namespace Avalonia.Controls.Notifications
     /// <summary>
     /// An <see cref="INotificationManager"/> that displays notifications in a <see cref="Window"/>.
     /// </summary>
+    [TemplatePart("PART_Items", typeof(Panel))]
+    [PseudoClasses(":topleft", ":topright", ":bottomleft", ":bottomright", ":topcenter", ":bottomcenter")]
     public class WindowNotificationManager : TemplatedControl, IManagedNotificationManager
     {
-        private IList _items;
+        private IList? _items;
+        private readonly Dictionary<object, NotificationCard> _notificationCards = new ();
 
         /// <summary>
         /// Defines the <see cref="Position"/> property.
@@ -30,8 +32,8 @@ namespace Avalonia.Controls.Notifications
         /// <seealso cref="NotificationPosition"/>
         public NotificationPosition Position
         {
-            get { return GetValue(PositionProperty); }
-            set { SetValue(PositionProperty, value); }
+            get => GetValue(PositionProperty);
+            set => SetValue(PositionProperty, value);
         }
 
         /// <summary>
@@ -45,46 +47,41 @@ namespace Avalonia.Controls.Notifications
         /// </summary>
         public int MaxItems
         {
-            get { return GetValue(MaxItemsProperty); }
-            set { SetValue(MaxItemsProperty, value); }
+            get => GetValue(MaxItemsProperty);
+            set => SetValue(MaxItemsProperty, value);
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="WindowNotificationManager"/> class.
         /// </summary>
-        /// <param name="host">The window that will host the control.</param>
-        public WindowNotificationManager(Window host)
+        /// <param name="host">The TopLevel that will host the control.</param>
+        public WindowNotificationManager(TopLevel? host) : this()
         {
-            if (VisualChildren.Count != 0)
+            if (host is not null)
             {
-                Install(host);
+                InstallFromTopLevel(host);
             }
-            else
-            {
-                Observable.FromEventPattern<TemplateAppliedEventArgs>(host, nameof(host.TemplateApplied)).Take(1)
-                    .Subscribe(_ =>
-                    {
-                        Install(host);
-                    });
-            }
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="WindowNotificationManager"/> class.
+        /// </summary>
+        public WindowNotificationManager()
+        {
+            UpdatePseudoClasses(Position);
         }
 
         static WindowNotificationManager()
         {
-            PseudoClass<WindowNotificationManager, NotificationPosition>(PositionProperty, x => x == NotificationPosition.TopLeft, ":topleft");
-            PseudoClass<WindowNotificationManager, NotificationPosition>(PositionProperty, x => x == NotificationPosition.TopRight, ":topright");
-            PseudoClass<WindowNotificationManager, NotificationPosition>(PositionProperty, x => x == NotificationPosition.BottomLeft, ":bottomleft");
-            PseudoClass<WindowNotificationManager, NotificationPosition>(PositionProperty, x => x == NotificationPosition.BottomRight, ":bottomright");
-
             HorizontalAlignmentProperty.OverrideDefaultValue<WindowNotificationManager>(Layout.HorizontalAlignment.Stretch);
             VerticalAlignmentProperty.OverrideDefaultValue<WindowNotificationManager>(Layout.VerticalAlignment.Stretch);
         }
 
         /// <inheritdoc/>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            base.OnTemplateApplied(e);
-
+            base.OnApplyTemplate(e);
+            
             var itemsControl = e.NameScope.Find<Panel>("PART_Items");
             _items = itemsControl?.Children;
         }
@@ -92,72 +89,181 @@ namespace Avalonia.Controls.Notifications
         /// <inheritdoc/>
         public void Show(INotification content)
         {
-            Show(content as object);
+            Show(content, content.Type, content.Expiration, content.OnClick, content.OnClose);
         }
 
         /// <inheritdoc/>
-        public async void Show(object content)
+        public void Show(object content)
         {
-            var notification = content as INotification;
+            if (content is INotification notification)
+            {
+                Show(notification, notification.Type, notification.Expiration, notification.OnClick, notification.OnClose);
+            }
+            else
+            {
+                Show(content, NotificationType.Information);
+            }
+        }
+
+        /// <summary>
+        /// Shows a Notification
+        /// </summary>
+        /// <param name="content">the content of the notification</param>
+        /// <param name="type">the type of the notification</param>
+        /// <param name="expiration">the expiration time of the notification after which it will automatically close. If the value is Zero then the notification will remain open until the user closes it</param>
+        /// <param name="onClick">an Action to be run when the notification is clicked</param>
+        /// <param name="onClose">an Action to be run when the notification is closed</param>
+        /// <param name="classes">style classes to apply</param>
+        public async void Show(object content, 
+            NotificationType type, 
+            TimeSpan? expiration = null,
+            Action? onClick = null, 
+            Action? onClose = null, 
+            string[]? classes = null)
+        {
+            Dispatcher.UIThread.VerifyAccess();
 
             var notificationControl = new NotificationCard
             {
-                Content = content
+                Content = content,
+                NotificationType = type
             };
 
-            if (notification != null)
+            // Add style classes if any
+            if (classes != null)
             {
-                notificationControl.NotificationClosed += (sender, args) =>
+                foreach (var @class in classes)
                 {
-                    notification.OnClose?.Invoke();
-
-                    _items.Remove(sender);
-                };
+                    notificationControl.Classes.Add(@class);
+                }
             }
+
+            notificationControl.NotificationClosed += (sender, args) =>
+            {
+                onClose?.Invoke();
+
+                _items?.Remove(sender);
+                _notificationCards.Remove(content);
+            };
 
             notificationControl.PointerPressed += (sender, args) =>
             {
-                if (notification != null && notification.OnClick != null)
-                {
-                    notification.OnClick.Invoke();
-                }
+                onClick?.Invoke();
 
                 (sender as NotificationCard)?.Close();
             };
 
-            _items.Add(notificationControl);
-
-            if (_items.OfType<NotificationCard>().Count(i => !i.IsClosing) > MaxItems)
+            Dispatcher.UIThread.Post(() =>
             {
-                _items.OfType<NotificationCard>().First(i => !i.IsClosing).Close();
-            }
+                _items?.Add(notificationControl);
+                _notificationCards.Add(content, notificationControl);
 
-            if (notification != null && notification.Expiration == TimeSpan.Zero)
+                if (_items?.OfType<NotificationCard>().Count(i => !i.IsClosing) > MaxItems)
+                {
+                    _items.OfType<NotificationCard>().First(i => !i.IsClosing).Close();
+                }
+            });
+
+            if (expiration == TimeSpan.Zero)
             {
                 return;
             }
 
-            await Task.Delay(notification?.Expiration ?? TimeSpan.FromSeconds(5));
+            await Task.Delay(expiration ?? TimeSpan.FromSeconds(5));
 
             notificationControl.Close();
+ 
+            _notificationCards.Remove(content);
+        }
+
+        /// <inheritdoc/>
+        public void Close(INotification notification)
+        {
+            Dispatcher.UIThread.VerifyAccess();
+
+            if (_notificationCards.Remove(notification, out var notificationCard))
+            {
+                notificationCard.Close();
+            }
+        }
+
+        /// <inheritdoc/>
+        public void Close(object content)
+        {
+            Dispatcher.UIThread.VerifyAccess();
+
+            if (_notificationCards.Remove(content, out var notificationCard))
+            {
+                notificationCard.Close();
+            }
+        }
+
+        /// <inheritdoc/>
+        public void CloseAll()
+        {
+            Dispatcher.UIThread.VerifyAccess();
+
+            foreach (var kvp in _notificationCards)
+            {
+                kvp.Value.Close();
+            }
+            
+            _notificationCards.Clear();
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == PositionProperty)
+            {
+                UpdatePseudoClasses(change.GetNewValue<NotificationPosition>());
+            }
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+
+            _notificationCards.Clear();
         }
 
         /// <summary>
         /// Installs the <see cref="WindowNotificationManager"/> within the <see cref="AdornerLayer"/>
-        /// of the host <see cref="Window"/>.
         /// </summary>
-        /// <param name="host">The <see cref="Window"/> that will be the host.</param>
-        private void Install(Window host)
+        private void InstallFromTopLevel(TopLevel topLevel)
         {
-            var adornerLayer = host.GetVisualDescendants()
-                .OfType<AdornerDecorator>()
-                .FirstOrDefault()
-                ?.AdornerLayer;
-
-            if (adornerLayer != null)
+            topLevel.TemplateApplied += TopLevelOnTemplateApplied;
+            var adorner = topLevel.FindDescendantOfType<VisualLayerManager>()?.AdornerLayer;
+            if (adorner is not null)
             {
-                adornerLayer.Children.Add(this);
+                adorner.Children.Add(this);
+                AdornerLayer.SetAdornedElement(this, adorner);
             }
+        }
+
+        private void TopLevelOnTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+        {
+            if (Parent is AdornerLayer adornerLayer)
+            {
+                adornerLayer.Children.Remove(this);
+                AdornerLayer.SetAdornedElement(this, null);
+            }
+            
+            // Reinstall notification manager on template reapplied.
+            var topLevel = (TopLevel)sender!;
+            topLevel.TemplateApplied -= TopLevelOnTemplateApplied;
+            InstallFromTopLevel(topLevel);
+        }
+
+        private void UpdatePseudoClasses(NotificationPosition position)
+        {
+            PseudoClasses.Set(":topleft", position == NotificationPosition.TopLeft);
+            PseudoClasses.Set(":topright", position == NotificationPosition.TopRight);
+            PseudoClasses.Set(":bottomleft", position == NotificationPosition.BottomLeft);
+            PseudoClasses.Set(":bottomright", position == NotificationPosition.BottomRight);
+            PseudoClasses.Set(":topcenter", position == NotificationPosition.TopCenter);
+            PseudoClasses.Set(":bottomcenter", position == NotificationPosition.BottomCenter);
         }
     }
 }

@@ -1,16 +1,18 @@
 using System;
 using System.Collections.Generic;
+using Avalonia.Metadata;
 
 #pragma warning disable CS1591 // Enable me later
 
 namespace Avalonia
 {
+    [PrivateApi]
     public class AvaloniaLocator : IAvaloniaDependencyResolver
     {
-        private readonly IAvaloniaDependencyResolver _parentScope;
+        private readonly IAvaloniaDependencyResolver? _parentScope;
         public static IAvaloniaDependencyResolver Current { get; set; }
         public static AvaloniaLocator CurrentMutable { get; set; }
-        private readonly Dictionary<Type, Func<object>> _registry = new Dictionary<Type, Func<object>>();
+        private readonly Dictionary<Type, Func<object?>> _registry = new Dictionary<Type, Func<object?>>();
 
         static AvaloniaLocator()
         {
@@ -27,10 +29,9 @@ namespace Avalonia
             _parentScope = parentScope;
         }
 
-        public object GetService(Type t)
+        public object? GetService(Type t)
         {
-            Func<object> rv;
-            return _registry.TryGetValue(t, out rv) ? rv() : _parentScope?.GetService(t);
+            return _registry.TryGetValue(t, out var rv) ? rv() : _parentScope?.GetService(t);
         }
 
         public class RegistrationHelper<TService>
@@ -54,9 +55,26 @@ namespace Avalonia
                 return _locator;
             }
 
+            public AvaloniaLocator ToLazy<TImlp>(Func<TImlp> func) where TImlp : TService
+            {
+                var constructed = false;
+                TImlp? instance = default;
+                _locator._registry[typeof (TService)] = () =>
+                {
+                    if (!constructed)
+                    {
+                        instance = func();
+                        constructed = true;
+                    }
+
+                    return instance;
+                };
+                return _locator;
+            }
+            
             public AvaloniaLocator ToSingleton<TImpl>() where TImpl : class, TService, new()
             {
-                TImpl instance = null;
+                TImpl? instance = null;
                 return ToFunc(() => instance ?? (instance = new TImpl()));
             }
 
@@ -98,16 +116,28 @@ namespace Avalonia
         }
     }
 
+    [PrivateApi]
     public interface IAvaloniaDependencyResolver
     {
-        object GetService(Type t);
+        object? GetService(Type t);
     }
 
+    [PrivateApi]
     public static class LocatorExtensions
     {
-        public static T GetService<T>(this IAvaloniaDependencyResolver resolver)
+        public static T? GetService<T>(this IAvaloniaDependencyResolver resolver)
         {
-            return (T) resolver.GetService(typeof (T));
+            return (T?) resolver.GetService(typeof (T));
+        }
+
+        public static object GetRequiredService(this IAvaloniaDependencyResolver resolver, Type t)
+        {
+            return resolver.GetService(t) ?? throw new InvalidOperationException($"Unable to locate '{t}'.");
+        }
+
+        public static T GetRequiredService<T>(this IAvaloniaDependencyResolver resolver)
+        {
+            return (T?)resolver.GetService(typeof(T)) ?? throw new InvalidOperationException($"Unable to locate '{typeof(T)}'.");
         }
     }
 }

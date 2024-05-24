@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Avalonia.Utilities
@@ -10,10 +11,11 @@ namespace Avalonia.Utilities
     /// </summary>
     /// <typeparam name="TKey">The type of the key.</typeparam>
     /// <typeparam name="TValue">The type of the value.</typeparam>
-    public class SingleOrDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
+    internal class SingleOrDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
+        where TKey : notnull
     {
         private KeyValuePair<TKey, TValue>? _singleValue;
-        private Dictionary<TKey, TValue> dictionary;
+        private Dictionary<TKey, TValue>? dictionary;
 
         public void Add(TKey key, TValue value)
         {
@@ -34,13 +36,13 @@ namespace Avalonia.Utilities
             }
         }
 
-        public bool TryGetValue(TKey key, out TValue value)
+        public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
         {
             if (dictionary == null)
             {
-                if (!_singleValue.HasValue || !_singleValue.Value.Key.Equals(key))
+                if (!_singleValue.HasValue || !EqualityComparer<TKey>.Default.Equals(_singleValue.Value.Key, key))
                 {
-                    value = default(TValue);
+                    value = default;
                     return false;
                 }
                 else
@@ -97,7 +99,7 @@ namespace Avalonia.Utilities
 
         private class SingleEnumerator<T> : IEnumerator<T>
         {
-            private T value;
+            private readonly T value;
             private int index = -1;
 
             public SingleEnumerator(T value)
@@ -120,7 +122,7 @@ namespace Avalonia.Utilities
                 }
             }
 
-            object IEnumerator.Current => Current;
+            object? IEnumerator.Current => Current;
 
             public void Dispose()
             {

@@ -1,28 +1,41 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using System;
+using Avalonia.Collections;
+using Avalonia.Controls.Shapes;
 using Avalonia.Controls.Utils;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
+using Avalonia.Utilities;
+using Avalonia.VisualTree;
 
 namespace Avalonia.Controls
 {
     /// <summary>
     /// A control which decorates a child with a border and background.
     /// </summary>
-    public partial class Border : Decorator
+#pragma warning disable CS0618 // Type or member is obsolete
+    public partial class Border : Decorator, IVisualWithRoundRectClip
+#pragma warning restore CS0618 // Type or member is obsolete
     {
         /// <summary>
         /// Defines the <see cref="Background"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> BackgroundProperty =
-            AvaloniaProperty.Register<Border, IBrush>(nameof(Background));
+        public static readonly StyledProperty<IBrush?> BackgroundProperty =
+            AvaloniaProperty.Register<Border, IBrush?>(nameof(Background));
+
+        /// <summary>
+        /// Defines the <see cref="BackgroundSizing"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BackgroundSizing> BackgroundSizingProperty =
+            AvaloniaProperty.Register<Border, BackgroundSizing>(
+                nameof(BackgroundSizing),
+                BackgroundSizing.CenterBorder);
 
         /// <summary>
         /// Defines the <see cref="BorderBrush"/> property.
         /// </summary>
-        public static readonly StyledProperty<IBrush> BorderBrushProperty =
-            AvaloniaProperty.Register<Border, IBrush>(nameof(BorderBrush));
+        public static readonly StyledProperty<IBrush?> BorderBrushProperty =
+            AvaloniaProperty.Register<Border, IBrush?>(nameof(BorderBrush));
 
         /// <summary>
         /// Defines the <see cref="BorderThickness"/> property.
@@ -36,7 +49,16 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<CornerRadius> CornerRadiusProperty =
             AvaloniaProperty.Register<Border, CornerRadius>(nameof(CornerRadius));
 
+        /// <summary>
+        /// Defines the <see cref="BoxShadow"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BoxShadows> BoxShadowProperty =
+            AvaloniaProperty.Register<Border, BoxShadows>(nameof(BoxShadow));
+
         private readonly BorderRenderHelper _borderRenderHelper = new BorderRenderHelper();
+        private Thickness? _layoutThickness;
+        private double _scale;
+        private CompositionBorderVisual? _borderVisual;
 
         /// <summary>
         /// Initializes static members of the <see cref="Border"/> class.
@@ -45,28 +67,55 @@ namespace Avalonia.Controls
         {
             AffectsRender<Border>(
                 BackgroundProperty,
+                BackgroundSizingProperty,
                 BorderBrushProperty,
                 BorderThicknessProperty,
-                CornerRadiusProperty);
+                CornerRadiusProperty,
+                BoxShadowProperty);
             AffectsMeasure<Border>(BorderThicknessProperty);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            switch (change.Property.Name)
+            {
+                case nameof(UseLayoutRounding):
+                case nameof(BorderThickness):
+                    _layoutThickness = null;
+                    break;
+                case nameof(CornerRadius):
+                    if (_borderVisual != null)
+                        _borderVisual.CornerRadius = CornerRadius;
+                    break;
+            }
         }
 
         /// <summary>
         /// Gets or sets a brush with which to paint the background.
         /// </summary>
-        public IBrush Background
+        public IBrush? Background
         {
-            get { return GetValue(BackgroundProperty); }
-            set { SetValue(BackgroundProperty, value); }
+            get => GetValue(BackgroundProperty);
+            set => SetValue(BackgroundProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets how the background is drawn relative to the border.
+        /// </summary>
+        public BackgroundSizing BackgroundSizing
+        {
+            get => GetValue(BackgroundSizingProperty);
+            set => SetValue(BackgroundSizingProperty, value);
         }
 
         /// <summary>
         /// Gets or sets a brush with which to paint the border.
         /// </summary>
-        public IBrush BorderBrush
+        public IBrush? BorderBrush
         {
-            get { return GetValue(BorderBrushProperty); }
-            set { SetValue(BorderBrushProperty, value); }
+            get => GetValue(BorderBrushProperty);
+            set => SetValue(BorderBrushProperty, value);
         }
 
         /// <summary>
@@ -74,8 +123,8 @@ namespace Avalonia.Controls
         /// </summary>
         public Thickness BorderThickness
         {
-            get { return GetValue(BorderThicknessProperty); }
-            set { SetValue(BorderThicknessProperty, value); }
+            get => GetValue(BorderThicknessProperty);
+            set => SetValue(BorderThicknessProperty, value);
         }
 
         /// <summary>
@@ -83,17 +132,64 @@ namespace Avalonia.Controls
         /// </summary>
         public CornerRadius CornerRadius
         {
-            get { return GetValue(CornerRadiusProperty); }
-            set { SetValue(CornerRadiusProperty, value); }
+            get => GetValue(CornerRadiusProperty);
+            set => SetValue(CornerRadiusProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the box shadow effect parameters
+        /// </summary>
+        public BoxShadows BoxShadow
+        {
+            get => GetValue(BoxShadowProperty);
+            set => SetValue(BoxShadowProperty, value);
+        }
+
+        private Thickness LayoutThickness
+        {
+            get
+            {
+                VerifyScale();
+
+                if (_layoutThickness == null)
+                {
+                    var borderThickness = BorderThickness;
+
+                    if (UseLayoutRounding)
+                        borderThickness = LayoutHelper.RoundLayoutThickness(borderThickness, _scale, _scale);
+
+                    _layoutThickness = borderThickness;
+                }
+
+                return _layoutThickness.Value;
+            }
+        }
+
+        private void VerifyScale()
+        {
+            var currentScale = LayoutHelper.GetLayoutScale(this);
+            if (MathUtilities.AreClose(currentScale, _scale))
+                return;
+
+            _scale = currentScale;
+            _layoutThickness = null;
         }
 
         /// <summary>
         /// Renders the control.
         /// </summary>
         /// <param name="context">The drawing context.</param>
-        public override void Render(DrawingContext context)
+        public sealed override void Render(DrawingContext context)
         {
-            _borderRenderHelper.Render(context, Bounds.Size, BorderThickness, CornerRadius, Background, BorderBrush);
+            _borderRenderHelper.Render(
+                context,
+                Bounds.Size,
+                LayoutThickness,
+                CornerRadius,
+                BackgroundSizing,
+                Background,
+                BorderBrush,
+                BoxShadow);
         }
 
         /// <summary>
@@ -113,9 +209,17 @@ namespace Avalonia.Controls
         /// <returns>The space taken.</returns>
         protected override Size ArrangeOverride(Size finalSize)
         {
-            _borderRenderHelper.Update(finalSize, BorderThickness, CornerRadius);
-
             return LayoutHelper.ArrangeChild(Child, finalSize, Padding, BorderThickness);
         }
+
+        private protected override CompositionDrawListVisual CreateCompositionVisual(Compositor compositor)
+        {
+            return _borderVisual = new CompositionBorderVisual(compositor, this)
+            {
+                CornerRadius = CornerRadius
+            };
+        }
+
+        public CornerRadius ClipToBoundsRadius => CornerRadius;
     }
 }

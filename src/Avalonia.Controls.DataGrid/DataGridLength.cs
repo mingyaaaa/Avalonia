@@ -7,7 +7,6 @@ using Avalonia.Utilities;
 using System;
 using System.ComponentModel;
 using System.Globalization;
-using Avalonia.Controls.Utils;
 
 namespace Avalonia.Controls
 {
@@ -499,7 +498,7 @@ namespace Avalonia.Controls
         {
             if (destinationType == null)
             {
-                throw new ArgumentNullException("destinationType");
+                throw new ArgumentNullException(nameof(destinationType));
             }
             if (destinationType != typeof(string))
             {
@@ -529,7 +528,7 @@ namespace Avalonia.Controls
                     //  in this case drop value part and print only "Star"
                     case DataGridLengthUnitType.Star:
                         return (
-                            DoubleUtil.AreClose(1.0, dataGridLength.Value.Value)
+                            MathUtilities.AreClose(1.0, dataGridLength.Value.Value)
                             ? _starSuffix
                             : Convert.ToString(dataGridLength.Value.Value, culture ?? CultureInfo.CurrentCulture) + DataGridLengthConverter._starSuffix);
 

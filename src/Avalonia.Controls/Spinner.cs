@@ -1,5 +1,6 @@
 ﻿using System;
 using Avalonia.Interactivity;
+using Avalonia.Reactive;
 
 namespace Avalonia.Controls
 {
@@ -114,10 +115,10 @@ namespace Avalonia.Controls
         /// <summary>
         /// Occurs when spinning is initiated by the end-user.
         /// </summary>
-        public event EventHandler<SpinEventArgs> Spin
+        public event EventHandler<SpinEventArgs>? Spin
         {
-            add { AddHandler(SpinEvent, value); }
-            remove { RemoveHandler(SpinEvent, value); }
+            add => AddHandler(SpinEvent, value);
+            remove => RemoveHandler(SpinEvent, value);
         }
 
         /// <summary>
@@ -125,8 +126,8 @@ namespace Avalonia.Controls
         /// </summary>
         public ValidSpinDirections ValidSpinDirection
         {
-            get { return GetValue(ValidSpinDirectionProperty); }
-            set { SetValue(ValidSpinDirectionProperty, value); }
+            get => GetValue(ValidSpinDirectionProperty);
+            set => SetValue(ValidSpinDirectionProperty, value);
         }
 
         /// <summary>
@@ -163,8 +164,8 @@ namespace Avalonia.Controls
         {
             if (e.Sender is Spinner spinner)
             {
-                var oldValue = (ValidSpinDirections)e.OldValue;
-                var newValue = (ValidSpinDirections)e.NewValue;
+                var oldValue = (ValidSpinDirections)e.OldValue!;
+                var newValue = (ValidSpinDirections)e.NewValue!;
                 spinner.OnValidSpinDirectionChanged(oldValue, newValue);
             }
         }

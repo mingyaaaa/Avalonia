@@ -1,15 +1,14 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Reactive.Concurrency;
-using System.Threading;
+using System.Collections.Generic;
 using Avalonia.Animation;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Input.Raw;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Styling;
@@ -31,37 +30,76 @@ namespace Avalonia
     /// method.
     /// - Tracks the lifetime of the application.
     /// </remarks>
-    public class Application : IApplicationLifecycle, IGlobalDataTemplates, IGlobalStyles, IStyleRoot, IResourceNode
+    public class Application : AvaloniaObject, IDataContextProvider, IGlobalDataTemplates, IGlobalStyles, IThemeVariantHost, IApplicationPlatformEvents, IOptionalFeatureProvider
     {
         /// <summary>
         /// The application-global data templates.
         /// </summary>
-        private DataTemplates _dataTemplates;
+        private DataTemplates? _dataTemplates;
 
-        private readonly Lazy<IClipboard> _clipboard =
-            new Lazy<IClipboard>(() => (IClipboard)AvaloniaLocator.Current.GetService(typeof(IClipboard)));
-        private readonly Styler _styler = new Styler();
-        private Styles _styles;
-        private IResourceDictionary _resources;
-        private CancellationTokenSource _mainLoopCancellationTokenSource;
-        private int _exitCode;
+        private Styles? _styles;
+        private IResourceDictionary? _resources;
+        private bool _notifyingResourcesChanged;
+        private Action<IReadOnlyList<IStyle>>? _stylesAdded;
+        private Action<IReadOnlyList<IStyle>>? _stylesRemoved;
+        private IApplicationLifetime? _applicationLifetime;
+        private bool _setupCompleted;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="Application"/> class.
+        /// Defines the <see cref="DataContext"/> property.
+        /// </summary>
+        public static readonly StyledProperty<object?> DataContextProperty =
+            StyledElement.DataContextProperty.AddOwner<Application>();
+
+        /// <inheritdoc cref="ThemeVariantScope.ActualThemeVariantProperty" />
+        public static readonly StyledProperty<ThemeVariant> ActualThemeVariantProperty =
+            ThemeVariantScope.ActualThemeVariantProperty.AddOwner<Application>();
+        
+        /// <inheritdoc cref="ThemeVariantScope.RequestedThemeVariantProperty" />
+        public static readonly StyledProperty<ThemeVariant?> RequestedThemeVariantProperty =
+            ThemeVariantScope.RequestedThemeVariantProperty.AddOwner<Application>();
+
+        /// <inheritdoc/>
+        public event EventHandler<ResourcesChangedEventArgs>? ResourcesChanged;
+
+        [Obsolete("Use Application.Current.TryGetFeature<IActivatableLifetime>() instead.")]
+        public event EventHandler<UrlOpenedEventArgs>? UrlsOpened;
+
+        /// <inheritdoc/>
+        public event EventHandler? ActualThemeVariantChanged;
+
+        /// <summary>
+        /// Creates an instance of the <see cref="Application"/> class.
         /// </summary>
         public Application()
         {
-            Windows = new WindowCollection(this);
+            Name = "Avalonia Application";
         }
 
-        /// <inheritdoc/>
-        public event EventHandler<StartupEventArgs> Startup;
+        /// <summary>
+        /// Gets or sets the Applications's data context.
+        /// </summary>
+        /// <remarks>
+        /// The data context property specifies the default object that will
+        /// be used for data binding.
+        /// </remarks>
+        public object? DataContext
+        {
+            get => GetValue(DataContextProperty);
+            set => SetValue(DataContextProperty, value);
+        }
 
-        /// <inheritdoc/>
-        public event EventHandler<ExitEventArgs> Exit;
-
-        /// <inheritdoc/>
-        public event EventHandler<ResourcesChangedEventArgs> ResourcesChanged;
+        /// <inheritdoc cref="ThemeVariantScope.RequestedThemeVariant"/>
+        public ThemeVariant? RequestedThemeVariant
+        {
+            get => GetValue(RequestedThemeVariantProperty);
+            set => SetValue(RequestedThemeVariantProperty, value);
+        }
+        
+        /// <inheritdoc />
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("AvaloniaProperty", "AVP1031", Justification = "This property is supposed to be a styled readonly property.")]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("AvaloniaProperty", "AVP1030", Justification = "False positive.")]
+        public ThemeVariant ActualThemeVariant => GetValue(ActualThemeVariantProperty);
 
         /// <summary>
         /// Gets the current instance of the <see cref="Application"/> class.
@@ -69,9 +107,9 @@ namespace Avalonia
         /// <value>
         /// The current instance of the <see cref="Application"/> class.
         /// </value>
-        public static Application Current
+        public static Application? Current
         {
-            get { return AvaloniaLocator.Current.GetService<Application>(); }
+            get => AvaloniaLocator.Current.GetService<Application>();
         }
 
         /// <summary>
@@ -83,59 +121,29 @@ namespace Avalonia
         public DataTemplates DataTemplates => _dataTemplates ?? (_dataTemplates = new DataTemplates());
 
         /// <summary>
-        /// Gets the application's focus manager.
-        /// </summary>
-        /// <value>
-        /// The application's focus manager.
-        /// </value>
-        public IFocusManager FocusManager
-        {
-            get;
-            private set;
-        }
-
-        /// <summary>
         /// Gets the application's input manager.
         /// </summary>
         /// <value>
         /// The application's input manager.
         /// </value>
-        public InputManager InputManager
+        internal InputManager? InputManager
         {
             get;
             private set;
         }
-
-        /// <summary>
-        /// Gets the application clipboard.
-        /// </summary>
-        public IClipboard Clipboard => _clipboard.Value;
 
         /// <summary>
         /// Gets the application's global resource dictionary.
         /// </summary>
         public IResourceDictionary Resources
         {
-            get => _resources ?? (Resources = new ResourceDictionary());
+            get => _resources ??= new ResourceDictionary(this);
             set
             {
-                Contract.Requires<ArgumentNullException>(value != null);
-
-                var hadResources = false;
-
-                if (_resources != null)
-                {
-                    hadResources = _resources.Count > 0;
-                    _resources.ResourcesChanged -= ThisResourcesChanged;
-                }
-
+                value = value ?? throw new ArgumentNullException(nameof(value));
+                _resources?.RemoveOwner(this);
                 _resources = value;
-                _resources.ResourcesChanged += ThisResourcesChanged;
-
-                if (hadResources || _resources.Count > 0)
-                {
-                    ResourcesChanged?.Invoke(this, new ResourcesChangedEventArgs());
-                }
+                _resources.AddOwner(this);
             }
         }
 
@@ -148,222 +156,94 @@ namespace Avalonia
         /// <remarks>
         /// Global styles apply to all windows in the application.
         /// </remarks>
-        public Styles Styles => _styles ?? (_styles = new Styles());
+        public Styles Styles => _styles ??= new Styles(this);
 
         /// <inheritdoc/>
         bool IDataTemplateHost.IsDataTemplatesInitialized => _dataTemplates != null;
 
+        /// <inheritdoc/>
+        bool IResourceNode.HasResources => (_resources?.HasResources ?? false) ||
+            (((IResourceNode?)_styles)?.HasResources ?? false);
+
         /// <summary>
         /// Gets the styling parent of the application, which is null.
         /// </summary>
-        IStyleHost IStyleHost.StylingParent => null;
+        IStyleHost? IStyleHost.StylingParent => null;
 
         /// <inheritdoc/>
         bool IStyleHost.IsStylesInitialized => _styles != null;
 
-        /// <inheritdoc/>
-        bool IResourceProvider.HasResources => _resources?.Count > 0;
+        /// <summary>
+        /// Application lifetime, use it for things like setting the main window and exiting the app from code
+        /// Currently supported lifetimes are:
+        /// - <see cref="IClassicDesktopStyleApplicationLifetime"/>
+        /// - <see cref="ISingleViewApplicationLifetime"/>
+        /// - <see cref="IControlledApplicationLifetime"/> 
+        /// - <see cref="IActivatableApplicationLifetime"/> 
+        /// </summary>
+        public IApplicationLifetime? ApplicationLifetime
+        {
+            get => _applicationLifetime;
+            set
+            {
+                if (_setupCompleted)
+                {
+                    throw new InvalidOperationException($"It's not possible to change {nameof(ApplicationLifetime)} after Application was initialized.");
+                }
 
-        /// <inheritdoc/>
-        IResourceNode IResourceNode.ResourceParent => null;
+                _applicationLifetime = value;
+            }
+        }
 
         /// <summary>
-        /// Gets or sets the <see cref="ShutdownMode"/>. This property indicates whether the application is shutdown explicitly or implicitly. 
-        /// If <see cref="ShutdownMode"/> is set to OnExplicitShutdown the application is only closes if Shutdown is called.
-        /// The default is OnLastWindowClose
+        /// Represents a contract for accessing global platform-specific settings.
         /// </summary>
-        /// <value>
-        /// The shutdown mode.
-        /// </value>
-        public ShutdownMode ShutdownMode { get; set; }
+        /// <remarks>
+        /// PlatformSettings can be null only if application wasn't initialized yet.
+        /// <see cref="TopLevel"/>'s <see cref="TopLevel.PlatformSettings"/> is an equivalent API
+        /// which should always be preferred over a global one,
+        /// as specific top levels might have different settings set-up. 
+        /// </remarks>
+        public IPlatformSettings? PlatformSettings => this.TryGetFeature<IPlatformSettings>();
+        
+        event Action<IReadOnlyList<IStyle>>? IGlobalStyles.GlobalStylesAdded
+        {
+            add => _stylesAdded += value;
+            remove => _stylesAdded -= value;
+        }
 
-        /// <summary>
-        /// Gets or sets the main window of the application.
-        /// </summary>
-        /// <value>
-        /// The main window.
-        /// </value>
-        public Window MainWindow { get; set; }
-
-        /// <summary>
-        /// Gets the open windows of the application.
-        /// </summary>
-        /// <value>
-        /// The windows.
-        /// </value>
-        public WindowCollection Windows { get; }
-
-        /// <summary>
-        /// Gets or sets a value indicating whether this instance is shutting down.
-        /// </summary>
-        /// <value>
-        ///   <c>true</c> if this instance is shutting down; otherwise, <c>false</c>.
-        /// </value>
-        internal bool IsShuttingDown { get; private set; }
+        event Action<IReadOnlyList<IStyle>>? IGlobalStyles.GlobalStylesRemoved
+        {
+            add => _stylesRemoved += value;
+            remove => _stylesRemoved -= value;
+        }
 
         /// <summary>
         /// Initializes the application by loading XAML etc.
         /// </summary>
         public virtual void Initialize() { }
-
-        /// <summary>
-        /// Runs the application's main loop.
-        /// </summary>
-        /// <remarks>
-        /// This will return when the <see cref="Avalonia.Controls.ShutdownMode"/> condition is met
-        /// or <see cref="Shutdown(int)"/> was called. 
-        /// </remarks>
-        /// <returns>The application's exit code that is returned to the operating system on termination.</returns>
-        public int Run()
-        {
-            return Run(new CancellationTokenSource());
-        }
-
-        /// <summary>
-        /// Runs the application's main loop.
-        /// </summary>
-        /// <remarks>
-        /// This will return when the <see cref="Avalonia.Controls.ShutdownMode"/> condition is met
-        /// or <see cref="Shutdown(int)"/> was called.
-        /// This also returns when <see cref="ICloseable"/> is closed.
-        /// </remarks>
-        /// <param name="closable">The closable to track.</param>
-        /// <returns>The application's exit code that is returned to the operating system on termination.</returns>
-        public int Run(ICloseable closable)
-        {
-            closable.Closed += (s, e) => _mainLoopCancellationTokenSource?.Cancel();
-
-            return Run(new CancellationTokenSource());
-        }
-
-        /// <summary>
-        /// Runs the application's main loop.
-        /// </summary>
-        /// <remarks>
-        /// This will return when the <see cref="Avalonia.Controls.ShutdownMode"/> condition is met
-        /// or <see cref="Shutdown(int)"/> was called.
-        /// </remarks>
-        /// <param name="mainWindow">The window that is used as <see cref="MainWindow"/>
-        /// when the <see cref="MainWindow"/> isn't already set.</param>
-        /// <returns>The application's exit code that is returned to the operating system on termination.</returns>
-        public int Run(Window mainWindow)
-        {
-            if (mainWindow == null)
-            {
-                throw new ArgumentNullException(nameof(mainWindow));
-            }
-
-            if (MainWindow == null)
-            {
-                if (!mainWindow.IsVisible)
-                {
-                    mainWindow.Show();
-                }
-
-                MainWindow = mainWindow;
-            }
-
-            return Run(new CancellationTokenSource());
-        }
-        /// <summary>
-        /// Runs the application's main loop.
-        /// </summary>
-        /// <remarks>
-        /// This will return when the <see cref="Avalonia.Controls.ShutdownMode"/> condition is met
-        /// or <see cref="Shutdown(int)"/> was called.
-        /// This also returns when the <see cref="CancellationToken"/> is canceled.
-        /// </remarks>
-        /// <returns>The application's exit code that is returned to the operating system on termination.</returns>
-        /// <param name="token">The token to track.</param>
-        public int Run(CancellationToken token)
-        {
-            return Run(CancellationTokenSource.CreateLinkedTokenSource(token));
-        }
-
-        private int Run(CancellationTokenSource tokenSource)
-        {
-            if (IsShuttingDown)
-            {
-                throw new InvalidOperationException("Application is shutting down.");
-            }
-
-            if (_mainLoopCancellationTokenSource != null)
-            {
-                throw new InvalidOperationException("Application is already running.");
-            }
-
-            _mainLoopCancellationTokenSource = tokenSource;
-
-            Dispatcher.UIThread.Post(() => OnStartup(new StartupEventArgs()), DispatcherPriority.Send);
-
-            Dispatcher.UIThread.MainLoop(_mainLoopCancellationTokenSource.Token);
-
-            if (!IsShuttingDown)
-            {
-                Shutdown(_exitCode);
-            }
-
-            return _exitCode;
-        }
-
-        /// <summary>
-        /// Raises the <see cref="Startup"/> event.
-        /// </summary>
-        /// <param name="e">A <see cref="StartupEventArgs"/> that contains the event data.</param>
-        protected virtual void OnStartup(StartupEventArgs e)
-        {
-            Startup?.Invoke(this, e);
-        }
-
-        /// <summary>
-        /// Raises the <see cref="Exit"/> event.
-        /// </summary>
-        /// <param name="e">A <see cref="ExitEventArgs"/> that contains the event data.</param>
-        protected virtual void OnExit(ExitEventArgs e)
-        {
-            Exit?.Invoke(this, e);
-        }
-
+        
         /// <inheritdoc/>
-        public void Shutdown(int exitCode = 0)
-        {
-            if (IsShuttingDown)
-            {
-                throw new InvalidOperationException("Application is already shutting down.");
-            }
-
-            _exitCode = exitCode;
-
-            IsShuttingDown = true;         
-
-            Windows.Clear();
-
-            try
-            {
-                var e = new ExitEventArgs { ApplicationExitCode = _exitCode };
-
-                OnExit(e);
-
-                _exitCode = e.ApplicationExitCode;                
-            }
-            finally
-            {
-                _mainLoopCancellationTokenSource?.Cancel();
-
-                _mainLoopCancellationTokenSource = null;
-
-                IsShuttingDown = false;
-
-                Environment.ExitCode = _exitCode;
-            }
-        }
-
-        /// <inheritdoc/>
-        bool IResourceProvider.TryGetResource(object key, out object value)
+        public bool TryGetResource(object key, ThemeVariant? theme, out object? value)
         {
             value = null;
-            return (_resources?.TryGetResource(key, out value) ?? false) ||
-                   Styles.TryGetResource(key, out value);
+            return (_resources?.TryGetResource(key, theme, out value) ?? false) ||
+                   Styles.TryGetResource(key, theme, out value);
+        }
+
+        void IResourceHost.NotifyHostedResourcesChanged(ResourcesChangedEventArgs e)
+        {
+            ResourcesChanged?.Invoke(this, e);
+        }
+
+        void IStyleHost.StylesAdded(IReadOnlyList<IStyle> styles)
+        {
+            _stylesAdded?.Invoke(styles);
+        }
+
+        void IStyleHost.StylesRemoved(IReadOnlyList<IStyle> styles)
+        {
+            _stylesRemoved?.Invoke(styles);
         }
 
         /// <summary>
@@ -372,31 +252,132 @@ namespace Avalonia
         public virtual void RegisterServices()
         {
             AvaloniaSynchronizationContext.InstallIfNeeded();
-            FocusManager = new FocusManager();
+            var focusManager = new FocusManager();
             InputManager = new InputManager();
+
+            if (PlatformSettings is { } settings)
+            {
+                settings.ColorValuesChanged += OnColorValuesChanged;
+                OnColorValuesChanged(settings, settings.GetColorValues());
+            }
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IAccessKeyHandler>().ToTransient<AccessKeyHandler>()
                 .Bind<IGlobalDataTemplates>().ToConstant(this)
                 .Bind<IGlobalStyles>().ToConstant(this)
-                .Bind<IFocusManager>().ToConstant(FocusManager)
+                .Bind<IThemeVariantHost>().ToConstant(this)
+                .Bind<IFocusManager>().ToConstant(focusManager)
                 .Bind<IInputManager>().ToConstant(InputManager)
+                .Bind< IToolTipService>().ToConstant(new ToolTipService(InputManager))
                 .Bind<IKeyboardNavigationHandler>().ToTransient<KeyboardNavigationHandler>()
-                .Bind<IStyler>().ToConstant(_styler)
-                .Bind<IApplicationLifecycle>().ToConstant(this)
-                .Bind<IScheduler>().ToConstant(AvaloniaScheduler.Instance)
-                .Bind<IDragDropDevice>().ToConstant(DragDropDevice.Instance)
-                .Bind<IPlatformDragSource>().ToTransient<InProcessDragSource>();
+                .Bind<IDragDropDevice>().ToConstant(DragDropDevice.Instance);
 
-            var clock = new RenderLoopClock();
-            AvaloniaLocator.CurrentMutable
-                .Bind<IGlobalClock>().ToConstant(clock)
-                .GetService<IRenderLoop>()?.Add(clock);
+            // TODO: Fix this, for now we keep this behavior since someone might be relying on it in 0.9.x
+            if (AvaloniaLocator.Current.GetService<IPlatformDragSource>() == null)
+                AvaloniaLocator.CurrentMutable
+                    .Bind<IPlatformDragSource>().ToTransient<InProcessDragSource>();
+
+            AvaloniaLocator.CurrentMutable.Bind<IGlobalClock>()
+                .ToConstant(MediaContext.Instance.Clock);
+
+            _setupCompleted = true;
+        }
+
+        public virtual void OnFrameworkInitializationCompleted()
+        {
+        }
+        
+        void IApplicationPlatformEvents.RaiseUrlsOpened(string[] urls)
+        {
+            UrlsOpened?.Invoke(this, new UrlOpenedEventArgs (urls));
+        }
+
+        private void NotifyResourcesChanged(ResourcesChangedEventArgs e)
+        {
+            if (_notifyingResourcesChanged)
+            {
+                return;
+            }
+
+            try
+            {
+                _notifyingResourcesChanged = true;
+                ResourcesChanged?.Invoke(this, ResourcesChangedEventArgs.Empty);
+            }
+            finally
+            {
+                _notifyingResourcesChanged = false;
+            }
         }
 
         private void ThisResourcesChanged(object sender, ResourcesChangedEventArgs e)
         {
-            ResourcesChanged?.Invoke(this, e);
+            NotifyResourcesChanged(e);
+        }
+
+        private string? _name;
+        /// <summary>
+        /// Defines Name property
+        /// </summary>
+        public static readonly DirectProperty<Application, string?> NameProperty =
+            AvaloniaProperty.RegisterDirect<Application, string?>("Name", o => o.Name, (o, v) => o.Name = v);
+
+        /// <summary>
+        /// Application name to be used for various platform-specific purposes
+        /// </summary>
+        public string? Name
+        {
+            get => _name;
+            set => SetAndRaise(NameProperty, ref _name, value);
+        }
+
+        /// <summary>
+        /// Queries for an optional feature.
+        /// </summary>
+        /// <param name="featureType">Feature type.</param>
+        /// <remarks>
+        /// Features currently supported by <see cref="Application.TryGetFeature"/>:
+        /// <list type="bullet">
+        /// <item>IPlatformSettings</item>
+        /// <item>IActivatableApplicationLifetime</item>
+        /// </list>
+        /// </remarks>
+        public object? TryGetFeature(Type featureType)
+        {
+            if (featureType == typeof(IPlatformSettings))
+            {
+                return AvaloniaLocator.Current.GetService<IPlatformSettings>();
+            }
+
+            if (featureType == typeof(IActivatableLifetime))
+            {
+                return AvaloniaLocator.Current.GetService<IActivatableLifetime>();
+            }
+
+            // Do not return just any service from AvaloniaLocator.
+            return null;
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == RequestedThemeVariantProperty)
+            {
+                if (change.GetNewValue<ThemeVariant>() is {} themeVariant && themeVariant != ThemeVariant.Default)
+                    SetValue(ActualThemeVariantProperty, themeVariant);
+                else
+                    ClearValue(ActualThemeVariantProperty);
+            }
+            else if (change.Property == ActualThemeVariantProperty)
+            {
+                ActualThemeVariantChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        
+        private void OnColorValuesChanged(object? sender, PlatformColorValues e)
+        {
+            SetValue(ActualThemeVariantProperty, (ThemeVariant)e.ThemeVariant, BindingPriority.Template);
         }
     }
 }

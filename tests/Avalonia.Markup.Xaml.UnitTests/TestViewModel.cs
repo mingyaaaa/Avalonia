@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.UnitTests;
 
 namespace Avalonia.Markup.Xaml.UnitTests
@@ -13,7 +10,7 @@ namespace Avalonia.Markup.Xaml.UnitTests
 
         public int Integer
         {
-            get { return _integer; }
+            get => _integer;
             set
             {
                 _integer = value;
@@ -23,7 +20,7 @@ namespace Avalonia.Markup.Xaml.UnitTests
 
         public string String
         {
-            get { return _string; }
+            get => _string;
             set
             {
                 _string = value;
@@ -33,7 +30,7 @@ namespace Avalonia.Markup.Xaml.UnitTests
 
         public TestViewModel Child
         {
-            get { return _child; }
+            get => _child;
             set
             {
                 _child = value;

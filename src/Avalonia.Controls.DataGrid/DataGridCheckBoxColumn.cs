@@ -17,9 +17,6 @@ namespace Avalonia.Controls
     /// </summary>
     public class DataGridCheckBoxColumn : DataGridBoundColumn
     {
-
-        private bool _beganEditWithKeyboard;
-        private bool _isThreeState;
         private CheckBox _currentCheckBox;
         private DataGrid _owningGrid;
 
@@ -32,6 +29,12 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
+        /// Defines the <see cref="IsThreeState"/> property.
+        /// </summary>
+        public static readonly StyledProperty<bool> IsThreeStateProperty =
+            CheckBox.IsThreeStateProperty.AddOwner<DataGridCheckBoxColumn>();
+
+        /// <summary>
         /// Gets or sets a value that indicates whether the hosted <see cref="T:System.Windows.Controls.CheckBox" /> controls allow three states or two. 
         /// </summary>
         /// <returns>
@@ -39,17 +42,17 @@ namespace Avalonia.Controls
         /// </returns>
         public bool IsThreeState
         {
-            get
+            get => GetValue(IsThreeStateProperty);
+            set => SetValue(IsThreeStateProperty, value);
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == IsThreeStateProperty)
             {
-                return _isThreeState;
-            }
-            set
-            {
-                if (_isThreeState != value)
-                {
-                    _isThreeState = value;
-                    NotifyPropertyChanged(nameof(IsThreeState));
-                }
+                NotifyPropertyChanged(change.Property.Name);
             }
         }
 
@@ -62,7 +65,7 @@ namespace Avalonia.Controls
         /// <param name="uneditedValue">
         /// The previous, unedited value in the cell being edited.
         /// </param>
-        protected override void CancelCellEdit(IControl editingElement, object uneditedValue)
+        protected override void CancelCellEdit(Control editingElement, object uneditedValue)
         {
             if (editingElement is CheckBox editingCheckBox)
             {
@@ -82,7 +85,7 @@ namespace Avalonia.Controls
         ///  <returns>
         ///  A new <see cref="T:System.Windows.Controls.CheckBox" /> control that is bound to the column's <see cref="P:System.Windows.Controls.DataGridBoundColumn.Binding" /> property value.
         ///  </returns>
-        protected override IControl GenerateEditingElementDirect(DataGridCell cell, object dataItem)
+        protected override Control GenerateEditingElementDirect(DataGridCell cell, object dataItem)
         {
             var checkBox = new CheckBox
             {
@@ -104,7 +107,7 @@ namespace Avalonia.Controls
         /// <returns>
         /// A new, read-only <see cref="T:System.Windows.Controls.CheckBox" /> control that is bound to the column's <see cref="P:System.Windows.Controls.DataGridBoundColumn.Binding" /> property value.
         /// </returns>
-        protected override IControl GenerateElement(DataGridCell cell, object dataItem)
+        protected override Control GenerateElement(DataGridCell cell, object dataItem)
         {
             bool isEnabled = false;
             CheckBox checkBoxElement = new CheckBox();
@@ -145,27 +148,11 @@ namespace Avalonia.Controls
         /// <returns>
         /// The unedited value. 
         /// </returns>
-        protected override object PrepareCellForEdit(IControl editingElement, RoutedEventArgs editingEventArgs)
+        protected override object PrepareCellForEdit(Control editingElement, RoutedEventArgs editingEventArgs)
         {
             if (editingElement is CheckBox editingCheckBox)
             {
-                bool? uneditedValue = editingCheckBox.IsChecked;
-                bool editValue = false;
-                if(editingEventArgs is PointerPressedEventArgs args)
-                {
-                    // Editing was triggered by a mouse click
-                    Point position = args.GetPosition(editingCheckBox);
-                    Rect rect = new Rect(0, 0, editingCheckBox.Bounds.Width, editingCheckBox.Bounds.Height);
-                    editValue = rect.Contains(position);
-                }
-                else if (_beganEditWithKeyboard)
-                {
-                    // Editing began by a user pressing spacebar
-                    editValue = true;
-                    _beganEditWithKeyboard = false;
-                }
-
-                if (editValue)
+                void EditValue()
                 {
                     // User clicked the checkbox itself or pressed space, let's toggle the IsChecked value
                     if (editingCheckBox.IsThreeState)
@@ -188,6 +175,40 @@ namespace Avalonia.Controls
                         editingCheckBox.IsChecked = !editingCheckBox.IsChecked;
                     }
                 }
+
+                bool? uneditedValue = editingCheckBox.IsChecked;
+                if (editingEventArgs is PointerPressedEventArgs args)
+                {
+                    void ProcessPointerArgs()
+                    {
+                        // Editing was triggered by a mouse click
+                        Point position = args.GetPosition(editingCheckBox);
+                        Rect rect = new Rect(0, 0, editingCheckBox.Bounds.Width, editingCheckBox.Bounds.Height);
+                        if (rect.Contains(position))
+                        {
+                            EditValue();
+                        }
+                    }
+                    
+                    void OnLayoutUpdated(object sender, EventArgs e)
+                    {
+                        if (editingCheckBox.Bounds.Width != 0 || editingCheckBox.Bounds.Height != 0)
+                        {
+                            editingCheckBox.LayoutUpdated -= OnLayoutUpdated;
+                            ProcessPointerArgs();
+                        }
+                    }
+
+                    if (editingCheckBox.Bounds.Width == 0 && editingCheckBox.Bounds.Height == 0)
+                    {
+                        editingCheckBox.LayoutUpdated += OnLayoutUpdated;
+                    }
+                    else
+                    {
+                        ProcessPointerArgs();
+                    }
+                }
+
                 return uneditedValue;
             }
             return false;
@@ -197,15 +218,15 @@ namespace Avalonia.Controls
         /// Called by the DataGrid control when this column asks for its elements to be
         /// updated, because its CheckBoxContent or IsThreeState property changed.
         /// </summary>
-        protected internal override void RefreshCellContent(IControl element, string propertyName)
+        protected internal override void RefreshCellContent(Control element, string propertyName)
         {
             if (element == null)
             {
-                throw new ArgumentNullException("element");
+                throw new ArgumentNullException(nameof(element));
             }
-            if(element is CheckBox checkBox)
+            if (element is CheckBox checkBox)
             {
-                checkBox.IsThreeState = IsThreeState;
+                DataGridHelper.SyncColumnProperty(this, checkBox, IsThreeStateProperty);
             }
             else
             {
@@ -229,7 +250,7 @@ namespace Avalonia.Controls
         {
             checkBox.HorizontalAlignment = HorizontalAlignment.Center;
             checkBox.VerticalAlignment = VerticalAlignment.Center;
-            checkBox.IsThreeState = IsThreeState;
+            DataGridHelper.SyncColumnProperty(this, checkBox, IsThreeStateProperty);
         }
 
         private bool EnsureOwningGrid()
@@ -280,13 +301,10 @@ namespace Avalonia.Controls
                     CheckBox checkBox = GetCellContent(row) as CheckBox;
                     if (checkBox == _currentCheckBox)
                     {
-                        _beganEditWithKeyboard = true;
                         OwningGrid.BeginEdit();
-                        return;
                     }
                 }
             }
-            _beganEditWithKeyboard = false;
         }
 
         private void OwningGrid_LoadingRow(object sender, DataGridRowEventArgs e)

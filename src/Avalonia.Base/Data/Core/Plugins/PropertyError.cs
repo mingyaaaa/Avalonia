@@ -7,7 +7,7 @@ namespace Avalonia.Data.Core.Plugins
     /// </summary>
     public class PropertyError : IPropertyAccessor
     {
-        private BindingNotification _error;
+        private readonly BindingNotification _error;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PropertyError"/> class.
@@ -19,10 +19,10 @@ namespace Avalonia.Data.Core.Plugins
         }
 
         /// <inheritdoc/>
-        public Type PropertyType => null;
+        public Type? PropertyType => null;
 
         /// <inheritdoc/>
-        public object Value => _error;
+        public object? Value => _error;
 
         /// <inheritdoc/>
         public void Dispose()
@@ -30,7 +30,7 @@ namespace Avalonia.Data.Core.Plugins
         }
 
         /// <inheritdoc/>
-        public bool SetValue(object value, BindingPriority priority)
+        public bool SetValue(object? value, BindingPriority priority)
         {
             return false;
         }

@@ -4,13 +4,11 @@
 // All other rights reserved. 
 
 using Avalonia.Data;
-using Avalonia.Utilities;
 using System;
-using System.Reactive.Disposables;
-using System.Reactive.Subjects;
+using Avalonia.Controls.Utils;
+using Avalonia.Markup.Xaml.MarkupExtensions;
+using Avalonia.Metadata;
 using Avalonia.Reactive;
-using System.Diagnostics;
-using Avalonia.Controls.Utils; 
 
 namespace Avalonia.Controls
 {
@@ -27,6 +25,7 @@ namespace Avalonia.Controls
         /// </summary>
         //TODO Binding
         [AssignBinding]
+        [InheritDataTypeFromItems(nameof(DataGrid.ItemsSource), AncestorType = typeof(DataGrid))]
         public virtual IBinding Binding
         {
             get
@@ -47,15 +46,20 @@ namespace Avalonia.Controls
 
                     if (_binding != null)
                     {
-                        if(_binding is Avalonia.Data.Binding binding)
+                        if(_binding is BindingBase binding)
                         {
-                            // Force the TwoWay binding mode if there is a Path present.  TwoWay binding requires a Path.
-                            if (!String.IsNullOrEmpty(binding.Path))
+                            if (binding.Mode == BindingMode.OneWayToSource)
+                            {
+                                throw new InvalidOperationException("DataGridColumn doesn't support BindingMode.OneWayToSource. Use BindingMode.TwoWay instead.");
+                            }
+
+                            var path = (binding as Binding)?.Path ?? (binding as CompiledBindingExtension)?.Path.ToString();
+                            if (!string.IsNullOrEmpty(path) && binding.Mode == BindingMode.Default)
                             {
                                 binding.Mode = BindingMode.TwoWay;
                             } 
 
-                            if (binding.Converter == null)
+                            if (binding.Converter == null && string.IsNullOrEmpty(binding.StringFormat))
                             {
                                 binding.Converter = DataGridValueConverter.Instance;
                             }
@@ -91,9 +95,9 @@ namespace Avalonia.Controls
 
         //TODO Rename
         //TODO Validation
-        protected sealed override IControl GenerateEditingElement(DataGridCell cell, object dataItem, out ICellEditBinding editBinding)
+        protected sealed override Control GenerateEditingElement(DataGridCell cell, object dataItem, out ICellEditBinding editBinding)
         {
-            IControl element = GenerateEditingElementDirect(cell, dataItem);
+            Control element = GenerateEditingElementDirect(cell, dataItem);
             editBinding = null; 
 
             if (Binding != null)
@@ -104,15 +108,15 @@ namespace Avalonia.Controls
             return element;
         } 
 
-        private static ICellEditBinding BindEditingElement(IAvaloniaObject target, AvaloniaProperty property, IBinding binding)
+        private static ICellEditBinding BindEditingElement(AvaloniaObject target, AvaloniaProperty property, IBinding binding)
         {
             var result = binding.Initiate(target, property, enableDataValidation: true); 
 
             if (result != null)
             {
-                if(result.Subject != null)
+                if(result.Source is IAvaloniaSubject<object> subject)
                 {
-                    var bindingHelper = new CellEditBinding(result.Subject);
+                    var bindingHelper = new CellEditBinding(subject);
                     var instanceBinding = new InstancedBinding(bindingHelper.InternalSubject, result.Mode, result.Priority); 
 
                     BindingOperations.Apply(target, property, instanceBinding, null);
@@ -125,20 +129,23 @@ namespace Avalonia.Controls
             return null;
         } 
 
-        protected abstract IControl GenerateEditingElementDirect(DataGridCell cell, object dataItem); 
+        protected abstract Control GenerateEditingElementDirect(DataGridCell cell, object dataItem); 
 
-        internal AvaloniaProperty BindingTarget { get; set; } 
+        protected AvaloniaProperty BindingTarget { get; set; } 
 
         internal void SetHeaderFromBinding()
         {
             if (OwningGrid != null && OwningGrid.DataConnection.DataType != null
-                && Header == null && Binding != null && Binding is Binding binding
-                && !String.IsNullOrWhiteSpace(binding.Path))
+                && Header == null && Binding != null && Binding is BindingBase binding)
             {
-                string header = OwningGrid.DataConnection.DataType.GetDisplayName(binding.Path);
-                if (header != null)
+                var path = (binding as Binding)?.Path ?? (binding as CompiledBindingExtension)?.Path.ToString();
+                if (!string.IsNullOrWhiteSpace(path))
                 {
-                    Header = header;
+                    var header = OwningGrid.DataConnection.DataType.GetDisplayName(path);
+                    if (header != null)
+                    {
+                        Header = header;
+                    }
                 }
             }
         }

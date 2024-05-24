@@ -1,6 +1,4 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using System;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests
@@ -12,7 +10,8 @@ namespace Avalonia.Base.UnitTests
         {
             var p1 = new StyledProperty<string>(
                 "p1", 
-                typeof(Class1), 
+                typeof(Class1),
+                typeof(Class1),
                 new StyledPropertyMetadata<string>());
             var p2 = p1.AddOwner<Class2>();
 
@@ -27,10 +26,38 @@ namespace Avalonia.Base.UnitTests
             var p1 = new StyledProperty<string>(
                 "p1",
                 typeof(Class1),
+                typeof(Class1),
                 new StyledPropertyMetadata<string>());
             var p2 = p1.AddOwner<Class2>();
 
             Assert.Same(p1, p2);
+        }
+
+        [Fact]
+        public void Default_GetMetadata_Cannot_Be_Changed()
+        {
+            var p1 = new StyledProperty<string>(
+                "p1",
+                typeof(Class1),
+                typeof(Class1),
+                new StyledPropertyMetadata<string>());
+            var metadata = p1.GetMetadata<Class1>();
+
+            Assert.Throws<InvalidOperationException>(() => metadata.Merge(new StyledPropertyMetadata<string>(), p1));
+        }
+
+        [Fact]
+        public void AddOwnered_GetMetadata_Cannot_Be_Changed()
+        {
+            var p1 = new StyledProperty<string>(
+                "p1",
+                typeof(Class1),
+                typeof(Class1),
+                new StyledPropertyMetadata<string>());
+            var p2 = p1.AddOwner<Class2>();
+            var metadata = p2.GetMetadata<Class2>();
+
+            Assert.Throws<InvalidOperationException>(() => metadata.Merge(new StyledPropertyMetadata<string>(), p2));
         }
 
         private class Class1 : AvaloniaObject

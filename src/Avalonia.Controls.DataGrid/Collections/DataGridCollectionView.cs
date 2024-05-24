@@ -44,7 +44,7 @@ namespace Avalonia.Collections
     }
 
     /// <summary>Defines a method that enables a collection to provide a custom view for specialized sorting, filtering, grouping, and currency.</summary>
-    internal interface IDataGridCollectionViewFactory
+    public interface IDataGridCollectionViewFactory
     {
         /// <summary>Returns a custom view for specialized sorting, filtering, grouping, and currency.</summary>
         /// <returns>A custom view for specialized sorting, filtering, grouping, and currency.</returns>
@@ -54,7 +54,7 @@ namespace Avalonia.Collections
     /// <summary>
     /// DataGrid-readable view over an IEnumerable.
     /// </summary>
-    public sealed class DataGridCollectionView : IDataGridCollectionView, IDataGridEditableCollectionView, INotifyPropertyChanged 
+    public sealed class DataGridCollectionView : IDataGridCollectionView, IDataGridEditableCollectionView, IList, INotifyPropertyChanged 
     {
         /// <summary>
         /// Since there's nothing in the un-cancelable event args that is mutable,
@@ -807,7 +807,7 @@ namespace Avalonia.Collections
             {
                 if (value < 0)
                 {
-                    throw new ArgumentOutOfRangeException("PageSize cannot have a negative value.");
+                    throw new ArgumentOutOfRangeException(nameof(value), "PageSize cannot have a negative value.");
                 }
 
                 // if the Refresh is currently deferred, cache the desired PageSize
@@ -877,7 +877,7 @@ namespace Avalonia.Collections
                         if (!CheckFlag(CollectionViewFlags.IsMoveToPageDeferred))
                         {
                             // if the temporaryGroup was not created yet and is out of sync
-                            // then create it so that we can use it as a refernce while paging.
+                            // then create it so that we can use it as a reference while paging.
                             if (IsGrouping && _temporaryGroup.ItemCount != InternalList.Count)
                             {
                                 PrepareTemporaryGroups();
@@ -889,7 +889,7 @@ namespace Avalonia.Collections
                     else if (IsGrouping)
                     {
                         // if the temporaryGroup was not created yet and is out of sync
-                        // then create it so that we can use it as a refernce while paging.
+                        // then create it so that we can use it as a reference while paging.
                         if (_temporaryGroup.ItemCount != InternalList.Count)
                         {
                             // update the groups that get created for the
@@ -1151,6 +1151,25 @@ namespace Avalonia.Collections
         public object this[int index]
         {
             get { return GetItemAt(index); }
+        }
+
+        bool IList.IsFixedSize => SourceList?.IsFixedSize ?? true;
+        bool IList.IsReadOnly => SourceList?.IsReadOnly ?? true;
+        bool ICollection.IsSynchronized => false;
+        object ICollection.SyncRoot => this;
+
+        object IList.this[int index]
+        {
+            get => this[index];
+            set
+            {
+                SourceList[index] = value;
+                if (SourceList is not INotifyCollectionChanged)
+                {
+                    // TODO: implement Replace
+                    ProcessCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset, value));
+                }
+            }
         }
 
         /// <summary>
@@ -1951,10 +1970,10 @@ namespace Avalonia.Collections
             EnsureCollectionInSync();
             VerifyRefreshNotDeferred();
 
-            // for indicies larger than the count
+            // for indices larger than the count
             if (index >= Count || index < 0)
             {
-                throw new ArgumentOutOfRangeException("index");
+                throw new ArgumentOutOfRangeException(nameof(index));
             }
 
             if (IsGrouping)
@@ -2595,7 +2614,7 @@ namespace Avalonia.Collections
         /// <returns>Whether the specified flag is set</returns>
         private bool CheckFlag(CollectionViewFlags flags)
         {
-            return (_flags & flags) != 0;
+            return _flags.HasAllFlags(flags);
         }
 
         /// <summary>
@@ -3275,7 +3294,7 @@ namespace Avalonia.Collections
                 addIndex);
 
             // next check if we need to add an item into the current group
-            // bool needsGrouping = false;
+            bool needsGrouping = false;
             if (Count == 1 && GroupDescriptions.Count > 0)
             {
                 // if this is the first item being added
@@ -3302,7 +3321,7 @@ namespace Avalonia.Collections
                 // otherwise, we need to validate that it is within the current page.
                 if (PageSize == 0 || (PageIndex + 1) * PageSize > leafIndex)
                 {
-                    //needsGrouping = true;
+                    needsGrouping = true;
 
                     int pageStartIndex = PageIndex * PageSize;
 
@@ -3338,6 +3357,13 @@ namespace Avalonia.Collections
                             removeNotificationItem,
                             PageSize - 1));
                 }
+            }
+
+            // if we need to add the item into the current group
+            // that will be displayed
+            if (needsGrouping)
+            {
+                this._group.AddToSubgroups(addedItem, false /*loading*/);
             }
 
             int addedIndex = IndexOf(addedItem);
@@ -3405,23 +3431,30 @@ namespace Avalonia.Collections
                 RefreshOrDefer();
                 return;
             }
-
-            object addedItem = args.NewItems?[0];
-            object removedItem = args.OldItems?[0];
-
+            
             // fire notifications for removes
-            if (args.Action == NotifyCollectionChangedAction.Remove ||
-                args.Action == NotifyCollectionChangedAction.Replace)
+            if (args.OldItems != null && 
+                (args.Action == NotifyCollectionChangedAction.Remove ||
+                args.Action == NotifyCollectionChangedAction.Replace))
             {
-                ProcessRemoveEvent(removedItem, args.Action == NotifyCollectionChangedAction.Replace);
+                foreach (var removedItem in args.OldItems)
+                {
+                    ProcessRemoveEvent(removedItem, args.Action == NotifyCollectionChangedAction.Replace);
+                }
             }
 
             // fire notifications for adds
-            if ((args.Action == NotifyCollectionChangedAction.Add ||
-                args.Action == NotifyCollectionChangedAction.Replace) &&
-                (Filter == null || PassesFilter(addedItem)))
+            if (args.NewItems != null && 
+                (args.Action == NotifyCollectionChangedAction.Add ||
+                 args.Action == NotifyCollectionChangedAction.Replace))
             {
-                ProcessAddEvent(addedItem, args.NewStartingIndex);
+                for (var i = 0; i < args.NewItems.Count; i++)
+                {
+                    if (Filter == null || PassesFilter(args.NewItems[i]))
+                    {
+                        ProcessAddEvent(args.NewItems[i], args.NewStartingIndex + i);
+                    }
+                }
             }
             if (args.Action != NotifyCollectionChangedAction.Replace)
             {
@@ -3793,7 +3826,7 @@ namespace Avalonia.Collections
         /// </summary>
         /// <remarks>
         /// This method can be called from a constructor - it does not call
-        /// any virtuals.  The 'count' parameter is substitute for the real Count,
+        /// any virtuals. The 'count' parameter is substitute for the real Count,
         /// used only when newItem is null.
         /// In that case, this method sets IsCurrentAfterLast to true if and only
         /// if newPosition >= count.  This distinguishes between a null belonging
@@ -3939,7 +3972,7 @@ namespace Avalonia.Collections
             {
                 sort.Initialize(itemType); 
 
-                if(seq is IOrderedEnumerable<object> orderedEnum)
+                if (seq is IOrderedEnumerable<object> orderedEnum)
                 {
                     seq = sort.ThenBy(orderedEnum);
                 }
@@ -3966,6 +3999,38 @@ namespace Avalonia.Collections
                 throw new InvalidOperationException("Cannot change or check the contents or current position of the CollectionView while Refresh is being deferred.");
             }
         }
+
+        int IList.Add(object value)
+        {
+            var index = SourceList.Add(value);
+            if (SourceList is not INotifyCollectionChanged)
+            {
+                ProcessCollectionChanged(
+                    new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, value));
+            }
+            return index;
+        }
+
+        void IList.Clear()
+        {
+            SourceList.Clear();
+            if (SourceList is not INotifyCollectionChanged)
+            {
+                ProcessCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            }
+        }
+
+        void IList.Insert(int index, object value) 
+        {
+            SourceList.Insert(index, value);
+            if (SourceList is not INotifyCollectionChanged)
+            {
+                // TODO: implement Insert
+                ProcessCollectionChanged(
+                    new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset, value));
+            }
+        }
+        void ICollection.CopyTo(Array array, int index) => InternalList.CopyTo(array, index);
 
         /// <summary>
         /// Creates a comparer class that takes in a CultureInfo as a parameter,

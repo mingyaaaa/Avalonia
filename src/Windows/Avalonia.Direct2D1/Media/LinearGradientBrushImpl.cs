@@ -1,17 +1,14 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System.Linq;
 using Avalonia.Media;
 
 namespace Avalonia.Direct2D1.Media
 {
-    public class LinearGradientBrushImpl : BrushImpl
+    internal class LinearGradientBrushImpl : BrushImpl
     {
         public LinearGradientBrushImpl(
             ILinearGradientBrush brush,
             SharpDX.Direct2D1.RenderTarget target,
-            Size destinationSize)
+            Rect destinationRect)
         {
             if (brush.GradientStops.Count == 0)
             {
@@ -24,8 +21,8 @@ namespace Avalonia.Direct2D1.Media
                 Position = (float)s.Offset
             }).ToArray();
 
-            var startPoint = brush.StartPoint.ToPixels(destinationSize);
-            var endPoint = brush.EndPoint.ToPixels(destinationSize);
+            var startPoint = brush.StartPoint.ToPixels(destinationRect);
+            var endPoint = brush.EndPoint.ToPixels(destinationRect);
 
             using (var stops = new SharpDX.Direct2D1.GradientStopCollection(
                 target,

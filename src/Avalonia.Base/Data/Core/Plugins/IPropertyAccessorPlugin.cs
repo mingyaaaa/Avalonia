@@ -1,13 +1,9 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 
 namespace Avalonia.Data.Core.Plugins
 {
     /// <summary>
-    /// Defines how a member is read, written and observed by an
-    /// <see cref="ExpressionObserver"/>.
+    /// Defines how a member is read, written and observed by a binding.
     /// </summary>
     public interface IPropertyAccessorPlugin
     {
@@ -28,8 +24,7 @@ namespace Avalonia.Data.Core.Plugins
         /// An <see cref="IPropertyAccessor"/> interface through which future interactions with the 
         /// property will be made.
         /// </returns>
-        IPropertyAccessor Start(
-            WeakReference reference, 
+        IPropertyAccessor? Start(WeakReference<object?> reference,
             string propertyName);
     }
 }

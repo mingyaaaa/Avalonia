@@ -1,33 +1,28 @@
 using System;
-using System.ComponentModel;
-using Android.Content;
-using Android.Runtime;
+using System.Runtime.Versioning;
 using Android.Views;
-using Android.Views.InputMethods;
 using Avalonia.Android.Platform.Input;
-using Avalonia.Controls;
+using Avalonia.Android.Platform.SkiaPlatform;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
-using Avalonia.Platform;
 
 namespace Avalonia.Android.Platform.Specific.Helpers
 {
-    public class AndroidKeyboardEventsHelper<TView> : IDisposable where TView :ITopLevelImpl, IAndroidView
+    internal class AndroidKeyboardEventsHelper<TView> : IDisposable where TView : TopLevelImpl, IAndroidView
     {
-        private TView _view;
-        private IInputElement _lastFocusedElement;
+        private readonly TView _view;
 
         public bool HandleEvents { get; set; }
 
         public AndroidKeyboardEventsHelper(TView view)
         {
-            this._view = view;
+            _view = view;
             HandleEvents = true;
         }
 
-        public bool? DispatchKeyEvent(KeyEvent e, out bool callBase)
+        public bool? DispatchKeyEvent(KeyEvent? e, out bool callBase)
         {
-            if (!HandleEvents)
+            if (!HandleEvents || e is null)
             {
                 callBase = true;
                 return null;
@@ -36,29 +31,55 @@ namespace Avalonia.Android.Platform.Specific.Helpers
             return DispatchKeyEventInternal(e, out callBase);
         }
 
+        [ObsoletedOSPlatform("android29.0")]
+        static string? UnicodeTextInput(KeyEvent keyEvent)
+        {
+            return keyEvent.Action == KeyEventActions.Multiple
+                && keyEvent.RepeatCount == 0
+                && !string.IsNullOrEmpty(keyEvent.Characters)
+                ? keyEvent.Characters
+                : null;
+        }
+
         private bool? DispatchKeyEventInternal(KeyEvent e, out bool callBase)
         {
-            if (e.Action == KeyEventActions.Multiple)
+            var unicodeTextInput = OperatingSystem.IsAndroidVersionAtLeast(29) ? null : UnicodeTextInput(e);
+            var inputRoot = _view.InputRoot;
+
+            if ((e.Action == KeyEventActions.Multiple && unicodeTextInput == null)
+                || inputRoot is null)
             {
                 callBase = true;
                 return null;
             }
 
-            var rawKeyEvent = new RawKeyEventArgs(
-                          AndroidKeyboardDevice.Instance,
-                          Convert.ToUInt32(e.EventTime),
-                          e.Action == KeyEventActions.Down ? RawKeyEventType.KeyDown : RawKeyEventType.KeyUp,
-            AndroidKeyboardDevice.ConvertKey(e.KeyCode), GetModifierKeys(e));
-            _view.Input(rawKeyEvent);
+            var physicalKey = AndroidKeyInterop.PhysicalKeyFromScanCode(e.ScanCode);
+            var keySymbol = GetKeySymbol(e.UnicodeChar, physicalKey);
+            var keyDeviceType = GetKeyDeviceType(e);
 
-            if (e.Action == KeyEventActions.Down && e.UnicodeChar >= 32)
+            var rawKeyEvent = new RawKeyEventArgs(
+                          AndroidKeyboardDevice.Instance!,
+                          Convert.ToUInt64(e.EventTime),
+                          inputRoot,
+                          e.Action == KeyEventActions.Down ? RawKeyEventType.KeyDown : RawKeyEventType.KeyUp,
+                          AndroidKeyboardDevice.ConvertKey(e.KeyCode),
+                          GetModifierKeys(e),
+                          physicalKey,
+                          keyDeviceType,
+                          keySymbol);
+
+            _view.Input?.Invoke(rawKeyEvent);
+
+            if ((e.Action == KeyEventActions.Down && e.UnicodeChar >= 32)
+                || unicodeTextInput != null)
             {
                 var rawTextEvent = new RawTextInputEventArgs(
-                  AndroidKeyboardDevice.Instance,
-                  Convert.ToUInt32(e.EventTime),
-                  Convert.ToChar(e.UnicodeChar).ToString()
+                  AndroidKeyboardDevice.Instance!,
+                  Convert.ToUInt64(e.EventTime),
+                  inputRoot,
+                  unicodeTextInput ?? Convert.ToChar(e.UnicodeChar).ToString()
                   );
-                _view.Input(rawTextEvent);
+                _view.Input?.Invoke(rawTextEvent);
             }
 
             if (e.Action == KeyEventActions.Up)
@@ -72,69 +93,58 @@ namespace Avalonia.Android.Platform.Specific.Helpers
             return false;
         }
 
-        private static InputModifiers GetModifierKeys(KeyEvent e)
+        private static RawInputModifiers GetModifierKeys(KeyEvent e)
         {
-            var rv = InputModifiers.None;
+            var rv = RawInputModifiers.None;
 
-            if (e.IsCtrlPressed) rv |= InputModifiers.Control;
-            if (e.IsShiftPressed) rv |= InputModifiers.Shift;
+            if (e.IsCtrlPressed) rv |= RawInputModifiers.Control;
+            if (e.IsShiftPressed) rv |= RawInputModifiers.Shift;
 
             return rv;
         }
 
-        private bool NeedsKeyboard(IInputElement element)
+        private static string? GetKeySymbol(int unicodeChar, PhysicalKey physicalKey)
         {
-            //may be some other elements
-            return element is TextBox;
+            // Handle a very limited set of control characters so that we're consistent with other platforms
+            // (matches KeySymbolHelper.IsAllowedAsciiKeySymbol)
+            switch (physicalKey)
+            {
+                case PhysicalKey.Backspace:
+                    return "\b";
+                case PhysicalKey.Tab:
+                    return "\t";
+                case PhysicalKey.Enter:
+                case PhysicalKey.NumPadEnter:
+                    return "\r";
+                case PhysicalKey.Escape:
+                    return "\u001B";
+                default:
+                    if (unicodeChar <= 0x7F)
+                    {
+                        var asciiChar = (char)unicodeChar;
+                        return KeySymbolHelper.IsAllowedAsciiKeySymbol(asciiChar) ? asciiChar.ToString() : null;
+                    }
+                    return char.ConvertFromUtf32(unicodeChar);
+            }
         }
 
-        private void TryShowHideKeyboard(IInputElement element, bool value)
+        private KeyDeviceType GetKeyDeviceType(KeyEvent e)
         {
-            var input = _view.View.Context.GetSystemService(Context.InputMethodService).JavaCast<InputMethodManager>();
+            var source = e.Device?.Sources ?? InputSourceType.Unknown;
 
-            if (value)
-            {
-                //show keyboard
-                //may be in the future different keyboards support e.g. normal, only digits etc.
-                //Android.Text.InputTypes
-                input.ToggleSoftInput(ShowFlags.Forced, HideSoftInputFlags.ImplicitOnly);
-            }
-            else
-            {
-                //hide keyboard
-                input.HideSoftInputFromWindow(_view.View.WindowToken, HideSoftInputFlags.None);
-            }
-        }
+            // Remote controller reports itself as "DPad | Keyboard", which is confusing,
+            // so we need to double-check KeyboardType as well.
 
-        public void UpdateKeyboardState(IInputElement element)
-        {
-            var focusedElement = element;
-            bool oldValue = NeedsKeyboard(_lastFocusedElement);
-            bool newValue = NeedsKeyboard(focusedElement);
+            if (source.HasAnyFlag(InputSourceType.Dpad)
+                && e.Device?.KeyboardType == InputKeyboardType.NonAlphabetic)
+                return KeyDeviceType.Remote;
 
-            if (newValue != oldValue || newValue)
-            {
-                TryShowHideKeyboard(focusedElement, newValue);
-            }
+            // ReSharper disable BitwiseOperatorOnEnumWithoutFlags - it IS flags enum under the hood.
+            if (source.HasAnyFlag(InputSourceType.Joystick | InputSourceType.Gamepad))
+                return KeyDeviceType.Gamepad;
+            // ReSharper restore BitwiseOperatorOnEnumWithoutFlags
 
-            _lastFocusedElement = element;
-        }
-
-        public void ActivateAutoShowKeyboard()
-        {
-            var kbDevice = (KeyboardDevice.Instance as INotifyPropertyChanged);
-
-            //just in case we've called more than once the method
-            kbDevice.PropertyChanged -= KeyboardDevice_PropertyChanged;
-            kbDevice.PropertyChanged += KeyboardDevice_PropertyChanged;
-        }
-
-        private void KeyboardDevice_PropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(KeyboardDevice.FocusedElement))
-            {
-                UpdateKeyboardState(KeyboardDevice.Instance.FocusedElement);
-            }
+            return KeyDeviceType.Keyboard; // fallback to the keyboard, if unknown.
         }
 
         public void Dispose()

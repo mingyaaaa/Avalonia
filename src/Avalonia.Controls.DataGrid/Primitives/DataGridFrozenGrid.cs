@@ -14,7 +14,7 @@ namespace Avalonia.Controls.Primitives
     /// </summary>
     public class DataGridFrozenGrid : Grid
     {
-        public static readonly AvaloniaProperty<bool> IsFrozenProperty =
+        public static readonly StyledProperty<bool> IsFrozenProperty =
             AvaloniaProperty.RegisterAttached<DataGridFrozenGrid, Control, bool>("IsFrozen");
 
         /// <summary>
@@ -26,7 +26,6 @@ namespace Avalonia.Controls.Primitives
         /// <returns>true if the grid is frozen; otherwise, false. The default is true.</returns>
         public static bool GetIsFrozen(Control element)
         {
-            Contract.Requires<ArgumentNullException>(element != null);
             return element.GetValue(IsFrozenProperty);
         }
 
@@ -38,7 +37,6 @@ namespace Avalonia.Controls.Primitives
         /// <exception cref="T:System.ArgumentNullException"><paramref name="element" /> is null.</exception>
         public static void SetIsFrozen(Control element, bool value)
         {
-            Contract.Requires<ArgumentNullException>(element != null);
             element.SetValue(IsFrozenProperty, value);
         }
     }

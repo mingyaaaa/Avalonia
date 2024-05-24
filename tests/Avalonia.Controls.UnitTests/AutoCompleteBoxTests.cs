@@ -1,22 +1,15 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using System.Collections;
+﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Markup.Data;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.UnitTests;
-using Moq;
 using Xunit;
 using System.Collections.ObjectModel;
+using System.Reactive.Subjects;
+using Avalonia.Input;
 
 namespace Avalonia.Controls.UnitTests
 {
@@ -90,7 +83,7 @@ namespace Avalonia.Controls.UnitTests
                 bool closeEvent = false;
                 control.DropDownOpened += (s, e) => openEvent = true;
                 control.DropDownClosed += (s, e) => closeEvent = true;
-                control.Items = CreateSimpleStringArray();
+                control.ItemsSource = CreateSimpleStringArray();
 
                 textbox.Text = "a";
                 Dispatcher.UIThread.RunJobs();
@@ -103,6 +96,16 @@ namespace Avalonia.Controls.UnitTests
                 Assert.True(control.SearchText == String.Empty);
                 Assert.False(control.IsDropDownOpen);
                 Assert.True(closeEvent);
+            });
+        }
+
+        [Fact]
+        public void Custom_FilterMode_Without_ItemFilter_Setting_Throws_Exception()
+        {
+            RunTest((control, textbox) =>
+            {
+                control.FilterMode = AutoCompleteFilterMode.Custom;
+                Assert.Throws<Exception>(() => { control.Text = "a"; });
             });
         }
 
@@ -249,7 +252,7 @@ namespace Avalonia.Controls.UnitTests
                 control.FilterMode = AutoCompleteFilterMode.None;
                 control.Populating += (s, e) =>
                 {
-                    control.Items = new string[] { custom };
+                    control.ItemsSource = new string[] { custom };
                     Assert.Equal(search, e.Parameter);
                 };
                 control.Populated += (s, e) =>
@@ -366,6 +369,132 @@ namespace Avalonia.Controls.UnitTests
             });
         }
         
+        [Fact]
+        public void Custom_TextSelector()
+        {
+            RunTest((control, textbox) =>
+            {
+                object selectedItem = control.ItemsSource.Cast<object>().First();
+                string input = "42";
+
+                control.TextSelector = (text, item) => text + item;
+                Assert.Equal(control.TextSelector("4", "2"), "42");
+
+                control.Text = input;
+                control.SelectedItem = selectedItem;
+                Assert.Equal(control.Text, control.TextSelector(input, selectedItem.ToString()));
+            });
+        }
+        
+        [Fact]
+        public void Custom_ItemSelector()
+        {
+            RunTest((control, textbox) =>
+            {
+                object selectedItem = control.ItemsSource.Cast<object>().First();
+                string input = "42";
+
+                control.ItemSelector = (text, item) => text + item;
+                Assert.Equal(control.ItemSelector("4", 2), "42");
+
+                control.Text = input;
+                control.SelectedItem = selectedItem;
+                Assert.Equal(control.Text, control.ItemSelector(input, selectedItem));
+            });
+        }
+        
+        [Fact]
+        public void Text_Validation()
+        {
+            RunTest((control, textbox) =>
+            {
+                var exception = new InvalidCastException("failed validation");
+                var textObservable = new BehaviorSubject<BindingNotification>(new BindingNotification(exception, BindingErrorType.DataValidationError));
+                control.Bind(AutoCompleteBox.TextProperty, textObservable);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal(DataValidationErrors.GetHasErrors(control), true);
+                Assert.Equal(DataValidationErrors.GetErrors(control).SequenceEqual(new[] { exception }), true);
+            });
+        }
+        
+        [Fact]
+        public void SelectedItem_Validation()
+        {
+            RunTest((control, textbox) =>
+            {
+                var exception = new InvalidCastException("failed validation");
+                var itemObservable = new BehaviorSubject<BindingNotification>(new BindingNotification(exception, BindingErrorType.DataValidationError));
+                control.Bind(AutoCompleteBox.SelectedItemProperty, itemObservable);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal(DataValidationErrors.GetHasErrors(control), true);
+                Assert.Equal(DataValidationErrors.GetErrors(control).SequenceEqual(new[] { exception }), true);
+            });
+        }
+
+        [Fact]
+        public void Explicit_Dropdown_Open_Request_MinimumPrefixLength_0()
+        {
+            RunTest((control, textbox) =>
+            {
+                control.Text = "";
+                control.MinimumPrefixLength = 0;
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.False(control.IsDropDownOpen);
+
+                control.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Down
+                });
+
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(control.IsDropDownOpen);
+            });
+        }
+
+        [Fact]
+        public void CaretIndex_Changes()
+        {
+            string text = "Sample text";
+            string expectedText = "Saple text";
+            RunTest((control, textbox) =>
+            {
+                control.Text = text;
+                control.Measure(Size.Infinity);
+                Dispatcher.UIThread.RunJobs();
+
+                textbox.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Right
+                });
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal(1, control.CaretIndex);
+                Assert.Equal(textbox.CaretIndex, control.CaretIndex);
+
+                control.CaretIndex = 3;
+
+                Assert.Equal(3, control.CaretIndex);
+                Assert.Equal(textbox.CaretIndex, control.CaretIndex);
+
+                textbox.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = Key.Back
+                });
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Equal(2, control.CaretIndex);
+                Assert.Equal(textbox.CaretIndex, control.CaretIndex);
+                Assert.True(control.Text == expectedText && textbox.Text == expectedText);
+            });
+        }
+
         /// <summary>
         /// Retrieves a defined predicate filter through a new AutoCompleteBox 
         /// control instance.
@@ -382,7 +511,7 @@ namespace Avalonia.Controls.UnitTests
         /// Creates a large list of strings for AutoCompleteBox testing.
         /// </summary>
         /// <returns>Returns a new List of string values.</returns>
-        private IList<string> CreateSimpleStringArray()
+        private static IList<string> CreateSimpleStringArray()
         {
             return new List<string>
             {
@@ -980,8 +1109,12 @@ namespace Avalonia.Controls.UnitTests
             using (UnitTestApplication.Start(Services))
             {
                 AutoCompleteBox control = CreateControl();
-                control.Items = CreateSimpleStringArray();
+                control.ItemsSource = CreateSimpleStringArray();
                 TextBox textBox = GetTextBox(control);
+                var window = new Window {Content = control};
+                window.ApplyStyling();
+                window.ApplyTemplate();
+                window.Presenter.ApplyTemplate();
                 Dispatcher.UIThread.RunJobs();
                 test.Invoke(control, textBox);
             }
@@ -995,14 +1128,14 @@ namespace Avalonia.Controls.UnitTests
 
         private AutoCompleteBox CreateControl()
         {
-            var datePicker =
+            var autoCompleteBox =
                 new AutoCompleteBox
                 {
                     Template = CreateTemplate()
                 };
 
-            datePicker.ApplyTemplate();
-            return datePicker;
+            autoCompleteBox.ApplyTemplate();
+            return autoCompleteBox;
         }
         private TextBox GetTextBox(AutoCompleteBox control)
         {
@@ -1012,23 +1145,25 @@ namespace Avalonia.Controls.UnitTests
         }
         private IControlTemplate CreateTemplate()
         {
-            return new FuncControlTemplate<AutoCompleteBox>(control =>
+            return new FuncControlTemplate<AutoCompleteBox>((control, scope) =>
             {
                 var textBox =
                     new TextBox
                     {
-                        Name = "PART_TextBox"
-                    };
+                        Name = "PART_TextBox",
+                        [!!TextBox.CaretIndexProperty] = control[!!AutoCompleteBox.CaretIndexProperty]
+                    }.RegisterInNameScope(scope);
                 var listbox =
                     new ListBox
                     {
                         Name = "PART_SelectingItemsControl"
-                    };
+                    }.RegisterInNameScope(scope);
                 var popup =
                     new Popup
                     {
-                        Name = "PART_Popup"
-                    };
+                        Name = "PART_Popup",
+                        PlacementTarget = control
+                    }.RegisterInNameScope(scope);
 
                 var panel = new Panel();
                 panel.Children.Add(textBox);

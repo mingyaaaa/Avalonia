@@ -1,41 +1,29 @@
 using System;
-using System.Reflection;
+using Avalonia.Metadata;
 
 namespace Avalonia.Platform
 {
+    [PrivateApi]
     public interface IRuntimePlatform
     {
-        IDisposable StartSystemTimer(TimeSpan interval, Action tick);
         RuntimePlatformInfo GetRuntimeInfo();
-        IUnmanagedBlob AllocBlob(int size);
     }
 
-    public interface IUnmanagedBlob : IDisposable
+    [PrivateApi]
+    public record struct RuntimePlatformInfo
     {
-        IntPtr Address { get; }
-        int Size { get; }
-        bool IsDisposed { get; }
-        
-    }
-
-    public struct RuntimePlatformInfo
-    {
-        public OperatingSystemType OperatingSystem { get; set; }
+        public FormFactorType FormFactor => IsDesktop ? FormFactorType.Desktop :
+            IsMobile ? FormFactorType.Mobile : IsTV ? FormFactorType.TV : FormFactorType.Unknown;
         public bool IsDesktop { get; set; }
         public bool IsMobile { get; set; }
-        public bool IsCoreClr { get; set; }
-        public bool IsMono { get; set; }
-        public bool IsDotNetFramework { get; set; }
-        public bool IsUnix { get; set; }
+        public bool IsTV { get; set; }
     }
 
-    public enum OperatingSystemType
+    public enum FormFactorType
     {
         Unknown,
-        WinNT,
-        Linux,
-        OSX,
-        Android,
-        iOS
+        Desktop,
+        Mobile,
+        TV
     }
 }

@@ -1,9 +1,7 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Linq;
-using System.Reactive.Linq;
+using Avalonia.Reactive;
+using Avalonia.Controls.Metadata;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 
@@ -12,50 +10,22 @@ namespace Avalonia.Controls.Notifications
     /// <summary>
     /// Control that represents and displays a notification.
     /// </summary>
+    [PseudoClasses(":error", ":information", ":success", ":warning")]
     public class NotificationCard : ContentControl
     {
-        private bool _isClosed;
         private bool _isClosing;
+
+        static NotificationCard()
+        {
+            CloseOnClickProperty.Changed.AddClassHandler<Button>(OnCloseOnClickPropertyChanged);
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="NotificationCard"/> class.
         /// </summary>
         public NotificationCard()
         {
-            this.GetObservable(IsClosedProperty)
-                .Subscribe(x =>
-                {
-                    if (!IsClosing && !IsClosed)
-                    {
-                        return;
-                    }
-
-                    RaiseEvent(new RoutedEventArgs(NotificationClosedEvent));
-                });
-
-            this.GetObservable(ContentProperty)
-                .OfType<Notification>()
-                .Subscribe(x =>
-                {
-                    switch (x.Type)
-                    {
-                        case NotificationType.Error:
-                            PseudoClasses.Add(":error");
-                            break;
-
-                        case NotificationType.Information:
-                            PseudoClasses.Add(":information");
-                            break;
-
-                        case NotificationType.Success:
-                            PseudoClasses.Add(":success");
-                            break;
-
-                        case NotificationType.Warning:
-                            PseudoClasses.Add(":warning");
-                            break;
-                    }
-                });
+            UpdateNotificationType();
         }
 
         /// <summary>
@@ -63,8 +33,8 @@ namespace Avalonia.Controls.Notifications
         /// </summary>
         public bool IsClosing
         {
-            get { return _isClosing; }
-            private set { SetAndRaise(IsClosingProperty, ref _isClosing, value); }
+            get => _isClosing;
+            private set => SetAndRaise(IsClosingProperty, ref _isClosing, value);
         }
 
         /// <summary>
@@ -78,15 +48,30 @@ namespace Avalonia.Controls.Notifications
         /// </summary>
         public bool IsClosed
         {
-            get { return _isClosed; }
-            set { SetAndRaise(IsClosedProperty, ref _isClosed, value); }
+            get => GetValue(IsClosedProperty);
+            set => SetValue(IsClosedProperty, value);
         }
 
         /// <summary>
         /// Defines the <see cref="IsClosed"/> property.
         /// </summary>
-        public static readonly DirectProperty<NotificationCard, bool> IsClosedProperty =
-            AvaloniaProperty.RegisterDirect<NotificationCard, bool>(nameof(IsClosed), o => o.IsClosed, (o, v) => o.IsClosed = v);
+        public static readonly StyledProperty<bool> IsClosedProperty =
+            AvaloniaProperty.Register<NotificationCard, bool>(nameof(IsClosed));
+
+        /// <summary>
+        /// Gets or sets the type of the notification
+        /// </summary>
+        public NotificationType NotificationType
+        {
+            get => GetValue(NotificationTypeProperty);
+            set => SetValue(NotificationTypeProperty, value);
+        }
+
+        /// <summary>
+        /// Defines the <see cref="NotificationType" /> property
+        /// </summary>
+        public static readonly StyledProperty<NotificationType> NotificationTypeProperty =
+            AvaloniaProperty.Register<NotificationCard, NotificationType>(nameof(NotificationType));
 
         /// <summary>
         /// Defines the <see cref="NotificationClosed"/> event.
@@ -98,30 +83,34 @@ namespace Avalonia.Controls.Notifications
         /// <summary>
         /// Raised when the <see cref="NotificationCard"/> has closed.
         /// </summary>
-        public event EventHandler<RoutedEventArgs> NotificationClosed
+        public event EventHandler<RoutedEventArgs>? NotificationClosed
         {
-            add { AddHandler(NotificationClosedEvent, value); }
-            remove { RemoveHandler(NotificationClosedEvent, value); }
+            add => AddHandler(NotificationClosedEvent, value);
+            remove => RemoveHandler(NotificationClosedEvent, value);
         }
 
         public static bool GetCloseOnClick(Button obj)
         {
+            _ = obj ?? throw new ArgumentNullException(nameof(obj));
             return (bool)obj.GetValue(CloseOnClickProperty);
         }
 
         public static void SetCloseOnClick(Button obj, bool value)
         {
+            _ = obj ?? throw new ArgumentNullException(nameof(obj));
             obj.SetValue(CloseOnClickProperty, value);
         }
 
         /// <summary>
         /// Defines the CloseOnClick property.
         /// </summary>
-        public static readonly AvaloniaProperty CloseOnClickProperty =
-          AvaloniaProperty.RegisterAttached<Button, bool>("CloseOnClick", typeof(NotificationCard), validate: CloseOnClickChanged);
+        public static readonly AttachedProperty<bool> CloseOnClickProperty =
+          AvaloniaProperty.RegisterAttached<NotificationCard, Button, bool>("CloseOnClick", defaultValue: false);
 
-        private static bool CloseOnClickChanged(Button button, bool value)
+        private static void OnCloseOnClickPropertyChanged(AvaloniaObject d, AvaloniaPropertyChangedEventArgs e)
         {
+            var button = (Button)d;
+            var value = (bool)e.NewValue!;
             if (value)
             {
                 button.Click += Button_Click;
@@ -130,17 +119,15 @@ namespace Avalonia.Controls.Notifications
             {
                 button.Click -= Button_Click;
             }
-
-            return true;
         }
 
         /// <summary>
         /// Called when a button inside the Notification is clicked.
         /// </summary>
-        private static void Button_Click(object sender, RoutedEventArgs e)
+        private static void Button_Click(object? sender, RoutedEventArgs e)
         {
             var btn = sender as ILogical;
-            var notification = btn.GetLogicalAncestors().OfType<NotificationCard>().FirstOrDefault();
+            var notification = btn?.GetLogicalAncestors().OfType<NotificationCard>().FirstOrDefault();
             notification?.Close();
         }
 
@@ -155,6 +142,53 @@ namespace Avalonia.Controls.Notifications
             }
 
             IsClosing = true;
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs e)
+        {
+            base.OnPropertyChanged(e);
+
+            if (e.Property == ContentProperty && e.NewValue is INotification notification)
+            {
+                SetValue(NotificationTypeProperty, notification.Type);
+            }
+
+            if (e.Property == NotificationTypeProperty)
+            {
+                UpdateNotificationType();
+            }
+
+            if (e.Property == IsClosedProperty)
+            {
+                if (!IsClosing && !IsClosed)
+                {
+                    return;
+                }
+
+                RaiseEvent(new RoutedEventArgs(NotificationClosedEvent));
+            }
+        }
+
+        private void UpdateNotificationType()
+        {
+            switch (NotificationType)
+            {
+                case NotificationType.Error:
+                    PseudoClasses.Add(":error");
+                    break;
+
+                case NotificationType.Information:
+                    PseudoClasses.Add(":information");
+                    break;
+
+                case NotificationType.Success:
+                    PseudoClasses.Add(":success");
+                    break;
+
+                case NotificationType.Warning:
+                    PseudoClasses.Add(":warning");
+                    break;
+            }
         }
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 namespace Avalonia.Controls
 {
     /// <summary>
@@ -27,6 +24,16 @@ namespace Avalonia.Controls
             AvaloniaProperty.Register<ColumnDefinition, GridLength>(nameof(Width), new GridLength(1, GridUnitType.Star));
 
         /// <summary>
+        /// Initializes static members of the <see cref="ColumnDefinition"/> class.
+        /// </summary>
+        static ColumnDefinition()
+        {
+            AffectsParentMeasure(MinWidthProperty, MaxWidthProperty);
+
+            WidthProperty.Changed.AddClassHandler<DefinitionBase>(OnUserSizePropertyChanged);
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ColumnDefinition"/> class.
         /// </summary>
         public ColumnDefinition()
@@ -39,8 +46,8 @@ namespace Avalonia.Controls
         /// <param name="value">The width of the column.</param>
         /// <param name="type">The width unit of the column.</param>
         public ColumnDefinition(double value, GridUnitType type)
+            : this(new GridLength(value, type))
         {
-            Width = new GridLength(value, type);
         }
 
         /// <summary>
@@ -62,8 +69,8 @@ namespace Avalonia.Controls
         /// </summary>
         public double MaxWidth
         {
-            get { return GetValue(MaxWidthProperty); }
-            set { SetValue(MaxWidthProperty, value); }
+            get => GetValue(MaxWidthProperty);
+            set => SetValue(MaxWidthProperty, value);
         }
 
         /// <summary>
@@ -71,8 +78,8 @@ namespace Avalonia.Controls
         /// </summary>
         public double MinWidth
         {
-            get { return GetValue(MinWidthProperty); }
-            set { SetValue(MinWidthProperty, value); }
+            get => GetValue(MinWidthProperty);
+            set => SetValue(MinWidthProperty, value);
         }
 
         /// <summary>
@@ -80,8 +87,8 @@ namespace Avalonia.Controls
         /// </summary>
         public GridLength Width
         {
-            get { return GetValue(WidthProperty); }
-            set { SetValue(WidthProperty, value); }
+            get => GetValue(WidthProperty);
+            set => SetValue(WidthProperty, value);
         }
 
         internal override GridLength UserSizeValueCache => this.Width;

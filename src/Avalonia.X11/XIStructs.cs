@@ -10,7 +10,7 @@ using Atom = System.IntPtr;
 namespace Avalonia.X11
 {
     [StructLayout(LayoutKind.Sequential)]
-    struct XIAddMasterInfo
+    internal struct XIAddMasterInfo
     {
         public int Type;
         public IntPtr Name;
@@ -19,7 +19,7 @@ namespace Avalonia.X11
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIRemoveMasterInfo
+    internal struct XIRemoveMasterInfo
     {
         public int Type;
         public int Deviceid;
@@ -29,7 +29,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIAttachSlaveInfo
+    internal struct XIAttachSlaveInfo
     {
         public int Type;
         public int Deviceid;
@@ -37,14 +37,14 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIDetachSlaveInfo
+    internal struct XIDetachSlaveInfo
     {
         public int Type;
         public int Deviceid;
     };
 
     [StructLayout(LayoutKind.Explicit)]
-    struct XIAnyHierarchyChangeInfo
+    internal struct XIAnyHierarchyChangeInfo
     {
         [FieldOffset(0)] 
         public int type; /* must be first element */
@@ -59,7 +59,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIModifierState
+    internal struct XIModifierState
     {
         public int Base;
         public int Latched;
@@ -68,14 +68,14 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIButtonState
+    internal unsafe struct XIButtonState
     {
         public int MaskLen;
         public byte* Mask;
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIValuatorState
+    internal unsafe struct XIValuatorState
     {
         public int MaskLen;
         public byte* Mask;
@@ -83,7 +83,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIEventMask
+    internal unsafe struct XIEventMask
     {
         public int Deviceid;
         public int MaskLen;
@@ -91,14 +91,14 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIAnyClassInfo
+    internal struct XIAnyClassInfo
     {
         public XiDeviceClass Type;
         public int Sourceid;
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIButtonClassInfo
+    internal unsafe struct XIButtonClassInfo
     {
         public int Type;
         public int Sourceid;
@@ -108,7 +108,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIKeyClassInfo
+    internal unsafe struct XIKeyClassInfo
     {
         public int Type;
         public int Sourceid;
@@ -117,7 +117,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIValuatorClassInfo
+    internal struct XIValuatorClassInfo
     {
         public int Type;
         public int Sourceid;
@@ -132,7 +132,7 @@ namespace Avalonia.X11
 
 /* new in XI 2.1 */
     [StructLayout(LayoutKind.Sequential)]
-    struct XIScrollClassInfo
+    internal struct XIScrollClassInfo
     {
         public int Type;
         public int Sourceid;
@@ -142,14 +142,14 @@ namespace Avalonia.X11
         public int Flags;
     };
 
-    enum XiScrollType
+    internal enum XiScrollType
     {
         Vertical = 1,
         Horizontal = 2
     }
     
     [StructLayout(LayoutKind.Sequential)]
-    struct XITouchClassInfo
+    internal struct XITouchClassInfo
     {
         public int Type;
         public int Sourceid;
@@ -158,7 +158,7 @@ namespace Avalonia.X11
     };
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIDeviceInfo
+    internal unsafe struct XIDeviceInfo
     {
         public int Deviceid;
         public IntPtr Name;
@@ -169,7 +169,7 @@ namespace Avalonia.X11
         public XIAnyClassInfo** Classes;
     }
 
-    enum XiDeviceType
+    internal enum XiDeviceType
     {
         XIMasterPointer = 1,
         XIMasterKeyboard = 2,
@@ -178,13 +178,13 @@ namespace Avalonia.X11
         XIFloatingSlave = 5
     }
 
-    enum XiPredefinedDeviceId : int
+    internal enum XiPredefinedDeviceId : int
     {
         XIAllDevices = 0,
         XIAllMasterDevices = 1
     }
 
-    enum XiDeviceClass
+    internal enum XiDeviceClass
     {
         XIKeyClass = 0,
         XIButtonClass = 1,
@@ -194,7 +194,7 @@ namespace Avalonia.X11
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIDeviceChangedEvent
+    internal unsafe struct XIDeviceChangedEvent
     {
         public int Type; /* GenericEvent */
         public UIntPtr Serial; /* # of last request processed by server */
@@ -211,7 +211,7 @@ namespace Avalonia.X11
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    struct XIDeviceEvent
+    internal struct XIDeviceEvent
     {
         public XEventName type; /* GenericEvent */
         public UIntPtr serial; /* # of last request processed by server */
@@ -236,16 +236,44 @@ namespace Avalonia.X11
         public XIModifierState mods;
         public XIModifierState group;
     }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct XIEnterLeaveEvent
+    {
+        public XEventName type; /* GenericEvent */
+        public UIntPtr serial; /* # of last request processed by server */
+        public Bool send_event; /* true if this came from a SendEvent request */
+        public IntPtr display; /* Display the event was read from */
+        public int extension; /* XI extension offset */
+        public XiEventType evtype;
+        public IntPtr time;
+        public int deviceid;
+        public int sourceid;
+        public XiEnterLeaveDetail detail;
+        public IntPtr RootWindow;
+        public IntPtr EventWindow;
+        public IntPtr ChildWindow;
+        public double root_x;
+        public double root_y;
+        public double event_x;
+        public double event_y;
+        public int mode;
+        public int focus;
+        public int same_screen;
+        public XIButtonState buttons;
+        public XIModifierState mods;
+        public XIModifierState group;
+    }
 
     [Flags]
-    public enum XiDeviceEventFlags : int
+    internal enum XiDeviceEventFlags : int
     {
         None = 0,
         XIPointerEmulated = (1 << 16)
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    unsafe struct XIEvent
+    internal unsafe struct XIEvent
     {
         public int type; /* GenericEvent */
         public UIntPtr serial; /* # of last request processed by server */
@@ -256,7 +284,7 @@ namespace Avalonia.X11
         public IntPtr time;
     }
 
-    enum XiEventType
+    internal enum XiEventType
     {
         XI_DeviceChanged = 1,
         XI_KeyPress = 2,
@@ -286,5 +314,18 @@ namespace Avalonia.X11
         XI_BarrierLeave = 26,
         XI_LASTEVENT = XI_BarrierLeave,
     }
-    
+
+    internal enum XiEnterLeaveDetail
+    {
+        XINotifyAncestor = 0,
+        XINotifyVirtual = 1,
+        XINotifyInferior = 2,
+        XINotifyNonlinear = 3,
+        XINotifyNonlinearVirtual = 4,
+        XINotifyPointer = 5,
+        XINotifyPointerRoot = 6,
+        XINotifyDetailNone = 7
+
+    }
+
 }

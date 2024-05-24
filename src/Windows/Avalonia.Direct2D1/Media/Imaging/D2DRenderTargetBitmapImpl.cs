@@ -1,22 +1,20 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+﻿using System;
 using System.IO;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Utilities;
 using SharpDX;
 using SharpDX.Direct2D1;
-using D2DBitmap = SharpDX.Direct2D1.Bitmap;
+using D2DBitmap = SharpDX.Direct2D1.Bitmap1;
 
 namespace Avalonia.Direct2D1.Media.Imaging
 {
-    public class D2DRenderTargetBitmapImpl : D2DBitmapImpl, IRenderTargetBitmapImpl, ILayerFactory
+    internal class D2DRenderTargetBitmapImpl : D2DBitmapImpl, IDrawingContextLayerImpl, ILayerFactory
     {
         private readonly BitmapRenderTarget _renderTarget;
 
         public D2DRenderTargetBitmapImpl(BitmapRenderTarget renderTarget)
-            : base(renderTarget.Bitmap)
+            : base(renderTarget.Bitmap.QueryInterface<Bitmap1>())
         {
             _renderTarget = renderTarget;
         }
@@ -32,12 +30,19 @@ namespace Avalonia.Direct2D1.Media.Imaging
             return new D2DRenderTargetBitmapImpl(bitmapRenderTarget);
         }
 
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
         {
-            return new DrawingContextImpl(visualBrushRenderer, this, _renderTarget, null, () => Version++);
+            return new DrawingContextImpl( this, _renderTarget, useScaledDrawing, 
+                null, () => Version++);
         }
 
-        public IRenderTargetBitmapImpl CreateLayer(Size size)
+        public bool IsCorrupted => false;
+
+        public void Blit(IDrawingContextImpl context) => throw new NotSupportedException();
+
+        public bool CanBlit => false;
+
+        public IDrawingContextLayerImpl CreateLayer(Size size)
         {
             return CreateCompatible(_renderTarget, size);
         }
@@ -49,17 +54,17 @@ namespace Avalonia.Direct2D1.Media.Imaging
 
         public override OptionalDispose<D2DBitmap> GetDirect2DBitmap(SharpDX.Direct2D1.RenderTarget target)
         {
-            return new OptionalDispose<D2DBitmap>(_renderTarget.Bitmap, false);
+            return new OptionalDispose<D2DBitmap>(_renderTarget.Bitmap.QueryInterface<Bitmap1>(), false);
         }
 
-        public override void Save(Stream stream)
+        public override void Save(Stream stream, int? quality = null)
         {
             using (var wic = new WicRenderTargetBitmapImpl(PixelSize, Dpi))
             {
-                using (var dc = wic.CreateDrawingContext(null))
+                using (var dc = wic.CreateDrawingContext(true, null))
                 {
-                    dc.DrawImage(
-                        RefCountable.CreateUnownedNotClonable(this),
+                    dc.DrawBitmap(
+                        this,
                         1,
                         new Rect(PixelSize.ToSizeWithDpi(Dpi.X)),
                         new Rect(PixelSize.ToSizeWithDpi(Dpi.X)));

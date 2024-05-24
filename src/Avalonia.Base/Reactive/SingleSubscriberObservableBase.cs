@@ -3,15 +3,15 @@ using Avalonia.Threading;
 
 namespace Avalonia.Reactive
 {
-    public abstract class SingleSubscriberObservableBase<T> : IObservable<T>, IDisposable
+    internal abstract class SingleSubscriberObservableBase<T> : IObservable<T>, IDisposable
     {
-        private Exception _error;
-        private IObserver<T> _observer;
+        private Exception? _error;
+        private IObserver<T>? _observer;
         private bool _completed;
 
         public IDisposable Subscribe(IObserver<T> observer)
         {
-            Contract.Requires<ArgumentNullException>(observer != null);
+            _ = observer ?? throw new ArgumentNullException(nameof(observer));
             Dispatcher.UIThread.VerifyAccess();
 
             if (_observer != null)
@@ -36,7 +36,7 @@ namespace Avalonia.Reactive
             return this;
         }
 
-        void IDisposable.Dispose()
+        public virtual void Dispose()
         {
             Unsubscribed();
             _observer = null;
@@ -51,10 +51,11 @@ namespace Avalonia.Reactive
 
         protected void PublishCompleted()
         {
+            _completed = true;
+
             if (_observer != null)
             {
                 _observer.OnCompleted();
-                _completed = true;
                 Unsubscribed();
                 _observer = null;
             }
@@ -62,10 +63,11 @@ namespace Avalonia.Reactive
 
         protected void PublishError(Exception error)
         {
+            _error = error;
+
             if (_observer != null)
             {
                 _observer.OnError(error);
-                _error = error;
                 Unsubscribed();
                 _observer = null;
             }

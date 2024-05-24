@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,6 +7,7 @@ using Metsys.Bson;
 
 namespace Avalonia.Remote.Protocol
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
     class BsonStreamTransportConnection : IAvaloniaRemoteTransportConnection
     {
         private readonly IMessageTypeResolver _resolver;
@@ -144,5 +146,9 @@ namespace Avalonia.Remote.Protocol
 
         public event Action<IAvaloniaRemoteTransportConnection, object> OnMessage;
         public event Action<IAvaloniaRemoteTransportConnection, Exception> OnException;
+        public void Start()
+        {
+            
+        }
     }
 }

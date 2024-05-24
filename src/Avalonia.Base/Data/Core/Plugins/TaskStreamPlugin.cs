@@ -1,25 +1,29 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using System.Reactive.Linq;
-using System.Reactive.Subjects;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Threading.Tasks;
+using Avalonia.Reactive;
 
 namespace Avalonia.Data.Core.Plugins
 {
     /// <summary>
     /// Handles binding to <see cref="Task"/>s for the '^' stream binding operator.
     /// </summary>
-    public class TaskStreamPlugin : IStreamPlugin
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = TrimmingMessages.IgnoreNativeAotSupressWarningMessage)]
+    [RequiresUnreferencedCode(TrimmingMessages.StreamPluginRequiresUnreferencedCodeMessage)]
+    internal class TaskStreamPlugin : IStreamPlugin
     {
         /// <summary>
         /// Checks whether this plugin handles the specified value.
         /// </summary>
         /// <param name="reference">A weak reference to the value.</param>
         /// <returns>True if the plugin can handle the value; otherwise false.</returns>
-        public virtual bool Match(WeakReference reference) => reference.Target is Task;
+        public virtual bool Match(WeakReference<object?> reference)
+        {
+            reference.TryGetTarget(out var target);
+
+            return target is Task;
+        }
 
         /// <summary>
         /// Starts producing output based on the specified value.
@@ -28,11 +32,11 @@ namespace Avalonia.Data.Core.Plugins
         /// <returns>
         /// An observable that produces the output for the value.
         /// </returns>
-        public virtual IObservable<object> Start(WeakReference reference)
+        public virtual IObservable<object?> Start(WeakReference<object?> reference)
         {
-            var task = reference.Target as Task;
+            reference.TryGetTarget(out var target);
 
-            if (task != null)
+            if (target is Task task)
             {
                 var resultProperty = task.GetType().GetRuntimeProperty("Result");
 
@@ -44,7 +48,7 @@ namespace Avalonia.Data.Core.Plugins
                         case TaskStatus.Faulted:
                             return HandleCompleted(task);
                         default:
-                            var subject = new Subject<object>();
+                            var subject = new LightweightSubject<object?>();
                             task.ContinueWith(
                                     x => HandleCompleted(task).Subscribe(subject),
                                     TaskScheduler.FromCurrentSynchronizationContext())
@@ -54,13 +58,14 @@ namespace Avalonia.Data.Core.Plugins
                 }
             }
 
-            return Observable.Empty<object>();
+            return Observable.Empty<object?>();
         }
 
-        protected IObservable<object> HandleCompleted(Task task)
+        [RequiresUnreferencedCode(TrimmingMessages.StreamPluginRequiresUnreferencedCodeMessage)]
+        private static IObservable<object?> HandleCompleted(Task task)
         {
             var resultProperty = task.GetType().GetRuntimeProperty("Result");
-            
+
             if (resultProperty != null)
             {
                 switch (task.Status)
@@ -68,7 +73,7 @@ namespace Avalonia.Data.Core.Plugins
                     case TaskStatus.RanToCompletion:
                         return Observable.Return(resultProperty.GetValue(task));
                     case TaskStatus.Faulted:
-                        return Observable.Return(new BindingNotification(task.Exception, BindingErrorType.Error));
+                        return Observable.Return(new BindingNotification(task.Exception!, BindingErrorType.Error));
                     default:
                         throw new AvaloniaInternalException("HandleCompleted called for non-completed Task.");
                 }

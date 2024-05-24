@@ -1,18 +1,14 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Input;
-using Avalonia.Layout;
 using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Controls;
-using Avalonia.Rendering;
 using Avalonia.Threading;
 using System.Reactive.Disposables;
-using System.Reactive.Concurrency;
+using System.Threading;
 using Avalonia.Input.Platform;
 using Avalonia.Animation;
+using Avalonia.Media;
 
 namespace Avalonia.UnitTests
 {
@@ -22,13 +18,19 @@ namespace Avalonia.UnitTests
 
         public UnitTestApplication() : this(null)
         {
-            
+
         }
-        
+
         public UnitTestApplication(TestServices services)
         {
             _services = services ?? new TestServices();
+            AvaloniaLocator.CurrentMutable.BindToSelf<Application>(this);
             RegisterServices();
+        }
+
+        static UnitTestApplication()
+        {
+            AssetLoader.RegisterResUriParsers();
         }
 
         public static new UnitTestApplication Current => (UnitTestApplication)Application.Current;
@@ -38,13 +40,21 @@ namespace Avalonia.UnitTests
         public static IDisposable Start(TestServices services = null)
         {
             var scope = AvaloniaLocator.EnterScope();
-            var app = new UnitTestApplication(services);
-            AvaloniaLocator.CurrentMutable.BindToSelf<Application>(app);
-            Dispatcher.UIThread.UpdateServices();
+            var oldContext = SynchronizationContext.Current;
+            _ = new UnitTestApplication(services);
+            Dispatcher.ResetForUnitTests();
             return Disposable.Create(() =>
             {
+                if (Dispatcher.UIThread.CheckAccess())
+                {
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                ((ToolTipService)AvaloniaLocator.Current.GetService<IToolTipService>())?.Dispose();
+
                 scope.Dispose();
-                Dispatcher.UIThread.UpdateServices();
+                Dispatcher.ResetForUnitTests();
+                SynchronizationContext.SetSynchronizationContext(oldContext);
             });
         }
 
@@ -56,23 +66,34 @@ namespace Avalonia.UnitTests
                 .Bind<IGlobalClock>().ToConstant(Services.GlobalClock)
                 .BindToSelf<IGlobalStyles>(this)
                 .Bind<IInputManager>().ToConstant(Services.InputManager)
+                .Bind<IToolTipService>().ToConstant(Services.InputManager == null ? null : new ToolTipService(Services.InputManager))
                 .Bind<IKeyboardDevice>().ToConstant(Services.KeyboardDevice?.Invoke())
-                .Bind<IKeyboardNavigationHandler>().ToConstant(Services.KeyboardNavigation)
                 .Bind<IMouseDevice>().ToConstant(Services.MouseDevice?.Invoke())
+                .Bind<IKeyboardNavigationHandler>().ToFunc(Services.KeyboardNavigation ?? (() => null))
                 .Bind<IRuntimePlatform>().ToConstant(Services.Platform)
                 .Bind<IPlatformRenderInterface>().ToConstant(Services.RenderInterface)
-                .Bind<IPlatformThreadingInterface>().ToConstant(Services.ThreadingInterface)
-                .Bind<IScheduler>().ToConstant(Services.Scheduler)
-                .Bind<IStandardCursorFactory>().ToConstant(Services.StandardCursorFactory)
-                .Bind<IStyler>().ToConstant(Services.Styler)
+                .Bind<IFontManagerImpl>().ToConstant(Services.FontManagerImpl)
+                .Bind<ITextShaperImpl>().ToConstant(Services.TextShaperImpl)
+                .Bind<IDispatcherImpl>().ToConstant(Services.DispatcherImpl)
+                .Bind<ICursorFactory>().ToConstant(Services.StandardCursorFactory)
                 .Bind<IWindowingPlatform>().ToConstant(Services.WindowingPlatform)
                 .Bind<PlatformHotkeyConfiguration>().ToSingleton<PlatformHotkeyConfiguration>()
-                .Bind<IApplicationLifecycle>().ToConstant(this);
-            var styles = Services.Theme?.Invoke();
+                .Bind<IPlatformSettings>().ToSingleton<DefaultPlatformSettings>()
+                .Bind<IAccessKeyHandler>().ToConstant(Services.AccessKeyHandler)
+                ;
+            
+            // This is a hack to make tests work, we need to refactor the way font manager is registered
+            // See https://github.com/AvaloniaUI/Avalonia/issues/10081
+            AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant((FontManager)null!);
+            var theme = Services.Theme?.Invoke();
 
-            if (styles != null)
+            if (theme is Style styles)
             {
-                Styles.AddRange(styles);
+                Styles.AddRange(styles.Children);
+            }
+            else if (theme is not null)
+            {
+                Styles.Add(theme);
             }
         }
     }

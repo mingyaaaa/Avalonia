@@ -1,14 +1,16 @@
 ﻿// (c) Copyright Microsoft Corporation.
 // This source is subject to the Microsoft Public License (Ms-PL).
-// Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
+// Please see https://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
 using System;
 using System.Globalization;
+using Avalonia.Controls.Metadata;
 using Avalonia.Input;
 
 namespace Avalonia.Controls.Primitives
 {
+    [PseudoClasses(":pressed", ":disabled", ":selected", ":inactive", ":today", ":blackout", ":dayfocused")]
     public sealed class CalendarDayButton : Button
     {
         /// <summary>
@@ -32,13 +34,13 @@ namespace Avalonia.Controls.Primitives
             : base()
         {
             //Focusable = false;
-            Content = DefaultContent.ToString(CultureInfo.CurrentCulture);
+            SetCurrentValue(ContentProperty, DefaultContent.ToString(CultureInfo.CurrentCulture));
         }
 
         /// <summary>
         /// Gets or sets the Calendar associated with this button.
         /// </summary>
-        internal Calendar Owner { get; set; }
+        internal Calendar? Owner { get; set; }
         internal int Index { get; set; }
 
         /// <summary>
@@ -47,7 +49,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         internal bool IsCurrent
         {
-            get { return _isCurrent; }
+            get => _isCurrent;
             set
             {
                 if (_isCurrent != value)
@@ -91,7 +93,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         internal bool IsBlackout
         {
-            get { return _isBlackout; }
+            get => _isBlackout;
             set
             {
                 if (_isBlackout != value)
@@ -108,7 +110,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         internal bool IsToday
         {
-            get { return _isToday; }
+            get => _isToday;
             set
             {
                 if (_isToday != value)
@@ -123,7 +125,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         internal bool IsInactive
         {
-            get { return _isInactive; }
+            get => _isInactive;
             set
             {
                 if (_isInactive != value)
@@ -139,7 +141,7 @@ namespace Avalonia.Controls.Primitives
         /// </summary>
         internal bool IsSelected
         {
-            get { return _isSelected; }
+            get => _isSelected;
             set
             {
                 if (_isSelected != value)
@@ -150,11 +152,11 @@ namespace Avalonia.Controls.Primitives
             }
         }
 
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            base.OnTemplateApplied(e);
             SetPseudoClasses();
         }
+
         private void SetPseudoClasses()
         {
             if (_ignoringMouseOverState)
@@ -175,7 +177,7 @@ namespace Avalonia.Controls.Primitives
         /// stylus touches the tablet PC) while the mouse pointer is over a
         /// UIElement.
         /// </summary>
-        public event EventHandler<PointerPressedEventArgs> CalendarDayButtonMouseDown;
+        public event EventHandler<PointerPressedEventArgs>? CalendarDayButtonMouseDown;
 
         /// <summary>
         /// Occurs when the left mouse button is released (or the tip of the
@@ -183,7 +185,7 @@ namespace Avalonia.Controls.Primitives
         /// stylus) is over a UIElement (or while a UIElement holds mouse
         /// capture).
         /// </summary>
-        public event EventHandler<PointerReleasedEventArgs> CalendarDayButtonMouseUp;
+        public event EventHandler<PointerReleasedEventArgs>? CalendarDayButtonMouseUp;
 
         /// <summary>
         /// Provides class handling for the MouseLeftButtonDown event that
@@ -206,7 +208,7 @@ namespace Avalonia.Controls.Primitives
         {
             base.OnPointerPressed(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
                 CalendarDayButtonMouseDown?.Invoke(this, e);
         }
 
@@ -231,7 +233,7 @@ namespace Avalonia.Controls.Primitives
         {
             base.OnPointerReleased(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.InitialPressMouseButton == MouseButton.Left)
                 CalendarDayButtonMouseUp?.Invoke(this, e);
         }
     }

@@ -1,21 +1,22 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using Avalonia.Controls;
 using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Direct2D1.Media;
 using Avalonia.Direct2D1.Media.Imaging;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
+using GlyphRun = Avalonia.Media.GlyphRun;
+using SharpDX.Mathematics.Interop;
 
 namespace Avalonia
 {
     public static class Direct2DApplicationExtensions
     {
-        public static T UseDirect2D1<T>(this T builder) where T : AppBuilderBase<T>, new()
+        public static AppBuilder UseDirect2D1(this AppBuilder builder)
         {
             builder.UseRenderingSubsystem(Direct2D1.Direct2D1Platform.Initialize, "Direct2D1");
             return builder;
@@ -25,7 +26,7 @@ namespace Avalonia
 
 namespace Avalonia.Direct2D1
 {
-    public class Direct2D1Platform : IPlatformRenderInterface
+    internal class Direct2D1Platform : IPlatformRenderInterface
     {
         private static readonly Direct2D1Platform s_instance = new Direct2D1Platform();
 
@@ -41,20 +42,6 @@ namespace Avalonia.Direct2D1
 
         public static SharpDX.DXGI.Device1 DxgiDevice { get; private set; }
 
-        public IEnumerable<string> InstalledFontNames
-        {
-            get
-            {
-                var cache = Direct2D1FontCollectionCache.s_installedFontCollection;
-                var length = cache.FontFamilyCount;
-                for (int i = 0; i < length; i++)
-                {
-                    var names = cache.GetFontFamily(i).FamilyNames;
-                    yield return names.GetString(0);
-                }
-            }
-        }
-
         private static readonly object s_initLock = new object();
         private static bool s_initialized = false;
 
@@ -67,15 +54,18 @@ namespace Avalonia.Direct2D1
                     return;
                 }
 #if DEBUG
-                try
+                if (Debugger.IsAttached)
                 {
-                    Direct2D1Factory = new SharpDX.Direct2D1.Factory1(
-                        SharpDX.Direct2D1.FactoryType.MultiThreaded,
+                    try
+                    {
+                        Direct2D1Factory = new SharpDX.Direct2D1.Factory1(
+                            SharpDX.Direct2D1.FactoryType.MultiThreaded,
                             SharpDX.Direct2D1.DebugLevel.Error);
-                }
-                catch
-                {
-                    //
+                    }
+                    catch
+                    {
+                        // ignore, retry below without the debug layer
+                    }
                 }
 #endif
                 if (Direct2D1Factory == null)
@@ -119,33 +109,14 @@ namespace Avalonia.Direct2D1
         public static void Initialize()
         {
             InitializeDirect2D();
-            AvaloniaLocator.CurrentMutable.Bind<IPlatformRenderInterface>().ToConstant(s_instance);
+            AvaloniaLocator.CurrentMutable
+                .Bind<IPlatformRenderInterface>().ToConstant(s_instance)
+                .Bind<IFontManagerImpl>().ToConstant(new FontManagerImpl())
+                .Bind<ITextShaperImpl>().ToConstant(new TextShaperImpl());
             SharpDX.Configuration.EnableReleaseOnFinalizer = true;
         }
 
-        public IBitmapImpl CreateBitmap(PixelSize size, Vector dpi)
-        {
-            return new WicBitmapImpl(size, dpi);
-        }
-
-        public IFormattedTextImpl CreateFormattedText(
-            string text,
-            Typeface typeface,
-            TextAlignment textAlignment,
-            TextWrapping wrapping,
-            Size constraint,
-            IReadOnlyList<FormattedTextStyleSpan> spans)
-        {
-            return new FormattedTextImpl(
-                text,
-                typeface,
-                textAlignment,
-                wrapping,
-                constraint,
-                spans);
-        }
-
-        public IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces)
+        private IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces)
         {
             foreach (var s in surfaces)
             {
@@ -177,29 +148,155 @@ namespace Avalonia.Direct2D1
             return new WicRenderTargetBitmapImpl(size, dpi);
         }
 
-        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat? format = null)
+        public IWriteableBitmapImpl CreateWriteableBitmap(PixelSize size, Vector dpi, PixelFormat format, AlphaFormat alphaFormat)
         {
-            return new WriteableWicBitmapImpl(size, dpi, format);
+            return new WriteableWicBitmapImpl(size, dpi, format, alphaFormat);
         }
 
         public IGeometryImpl CreateEllipseGeometry(Rect rect) => new EllipseGeometryImpl(rect);
         public IGeometryImpl CreateLineGeometry(Point p1, Point p2) => new LineGeometryImpl(p1, p2);
         public IGeometryImpl CreateRectangleGeometry(Rect rect) => new RectangleGeometryImpl(rect);
         public IStreamGeometryImpl CreateStreamGeometry() => new StreamGeometryImpl();
+        public IGeometryImpl CreateGeometryGroup(FillRule fillRule, IReadOnlyList<IGeometryImpl> children) => new GeometryGroupImpl(fillRule, children);
+        public IGeometryImpl CreateCombinedGeometry(GeometryCombineMode combineMode, IGeometryImpl g1, IGeometryImpl g2) => new CombinedGeometryImpl(combineMode, g1, g2);
+        public IGlyphRunImpl CreateGlyphRun(IGlyphTypeface glyphTypeface, double fontRenderingEmSize, IReadOnlyList<GlyphInfo> glyphInfos, Point baselineOrigin)
+        {
+            return new GlyphRunImpl(glyphTypeface, fontRenderingEmSize, glyphInfos, baselineOrigin);
+        }
 
+        class D2DApi : IPlatformRenderInterfaceContext
+        {
+            private readonly Direct2D1Platform _platform;
+
+            public D2DApi(Direct2D1Platform platform)
+            {
+                _platform = platform;
+            }
+            public object TryGetFeature(Type featureType) => null;
+
+            public void Dispose()
+            {
+            }
+
+            public IRenderTarget CreateRenderTarget(IEnumerable<object> surfaces) => _platform.CreateRenderTarget(surfaces);
+            public bool IsLost => false;
+            public IReadOnlyDictionary<Type, object> PublicFeatures { get; } = new Dictionary<Type, object>();
+        }
+
+        public IPlatformRenderInterfaceContext CreateBackendContext(IPlatformGraphicsContext graphicsContext) =>
+            new D2DApi(this);
+
+        public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)
+        {
+            if (glyphRun.GlyphTypeface is not GlyphTypefaceImpl glyphTypeface)
+            {
+                throw new InvalidOperationException("PlatformImpl can't be null.");
+            }
+
+            var pathGeometry = new SharpDX.Direct2D1.PathGeometry(Direct2D1Factory);
+
+            using (var sink = pathGeometry.Open())
+            {
+                var glyphInfos = glyphRun.GlyphInfos;
+                var glyphs = new short[glyphInfos.Count];
+
+                for (int i = 0; i < glyphInfos.Count; i++)
+                {
+                    glyphs[i] = (short)glyphInfos[i].GlyphIndex;
+                }
+
+                glyphTypeface.FontFace.GetGlyphRunOutline((float)glyphRun.FontRenderingEmSize, glyphs, null, null, false, !glyphRun.IsLeftToRight, sink);
+
+                sink.Close();
+            }
+
+            var (baselineOriginX, baselineOriginY) = glyphRun.BaselineOrigin;
+
+            var transformedGeometry = new SharpDX.Direct2D1.TransformedGeometry(
+                Direct2D1Factory,
+                pathGeometry,
+                new RawMatrix3x2(1.0f, 0.0f, 0.0f, 1.0f, (float)baselineOriginX, (float)baselineOriginY));
+
+            return new TransformedGeometryWrapper(transformedGeometry);
+        }
+
+        private class TransformedGeometryWrapper : GeometryImpl
+        {
+            public TransformedGeometryWrapper(SharpDX.Direct2D1.TransformedGeometry geometry) : base(geometry)
+            {
+
+            }
+        }
+
+        /// <inheritdoc />
         public IBitmapImpl LoadBitmap(string fileName)
         {
             return new WicBitmapImpl(fileName);
         }
 
+        /// <inheritdoc />
         public IBitmapImpl LoadBitmap(Stream stream)
         {
             return new WicBitmapImpl(stream);
         }
 
-        public IBitmapImpl LoadBitmap(PixelFormat format, IntPtr data, PixelSize size, Vector dpi, int stride)
+        public IWriteableBitmapImpl LoadWriteableBitmapToWidth(Stream stream, int width,
+            BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
-            return new WicBitmapImpl(format, data, size, dpi, stride);
+            return new WriteableWicBitmapImpl(stream, width, true, interpolationMode);
         }
+
+        public IWriteableBitmapImpl LoadWriteableBitmapToHeight(Stream stream, int height,
+            BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new WriteableWicBitmapImpl(stream, height, false, interpolationMode);
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmap(string fileName)
+        {
+            return new WriteableWicBitmapImpl(fileName);
+        }
+
+        public IWriteableBitmapImpl LoadWriteableBitmap(Stream stream)
+        {
+            return new WriteableWicBitmapImpl(stream);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new WicBitmapImpl(stream, width, true, interpolationMode);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmapToHeight(Stream stream, int height, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            return new WicBitmapImpl(stream, height, false, interpolationMode);
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl ResizeBitmap(IBitmapImpl bitmapImpl, PixelSize destinationSize, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
+        {
+            // https://github.com/sharpdx/SharpDX/issues/959 blocks implementation.
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public IBitmapImpl LoadBitmap(PixelFormat format, AlphaFormat alphaFormat, IntPtr data, PixelSize size, Vector dpi, int stride)
+        {
+            return new WicBitmapImpl(format, alphaFormat, data, size, dpi, stride);
+        }
+
+        public bool SupportsIndividualRoundRects => false;
+
+        public AlphaFormat DefaultAlphaFormat => AlphaFormat.Premul;
+
+        public PixelFormat DefaultPixelFormat => PixelFormat.Bgra8888;
+        public bool IsSupportedBitmapPixelFormat(PixelFormat format) =>
+            format == PixelFormats.Bgra8888 
+            || format == PixelFormats.Rgba8888;
+
+        public bool SupportsRegions => false;
+        public IPlatformRenderInterfaceRegion CreateRegion() => throw new NotSupportedException();
     }
 }

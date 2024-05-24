@@ -1,7 +1,4 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
+﻿using System;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -14,7 +11,7 @@ using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
 {
-    public class StaticResourceExtensionTests
+    public class StaticResourceExtensionTests : XamlTestBase
     {
         [Fact]
         public void StaticResource_Can_Be_Assigned_To_Property()
@@ -29,12 +26,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
-            var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
@@ -50,8 +46,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Grid.Column='{StaticResource col}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
             Assert.Equal(5, Grid.GetColumn(border));
@@ -74,12 +69,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
-            var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
@@ -95,12 +89,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var border = window.FindControl<Border>("border");
 
                 var brush = (SolidColorBrush)border.Background;
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
@@ -123,12 +116,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
-            var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
@@ -154,12 +146,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
-            var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
@@ -175,8 +166,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-                var loader = new AvaloniaXamlLoader();
-                var userControl = (UserControl)loader.Load(xaml);
+                var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var border = userControl.FindControl<Border>("border");
 
                 // We don't actually know where the global styles are until we attach the control
@@ -185,7 +175,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
                 window.Show();
 
                 var brush = (SolidColorBrush)border.Background;
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
@@ -208,12 +198,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Button Name='button'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var button = window.FindControl<Button>("button");
-                var brush = (SolidColorBrush)button.Background;
+                var brush = (ISolidColorBrush)button.Background;
 
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
@@ -238,19 +227,20 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Button Name='button'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var button = window.FindControl<Button>("button");
-                var brush = (SolidColorBrush)button.Background;
+                var brush = (ISolidColorBrush)button.Background;
 
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
         [Fact]
         public void StaticResource_Can_Be_Assigned_To_Setter_In_Styles_File()
         {
-            var styleXaml = @"
+            var documents = new[]
+            {
+                new RuntimeXamlLoaderDocument(new Uri("avares://Tests/Style.xaml"), @"
 <Styles xmlns='https://github.com/avaloniaui'
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
     <Styles.Resources>
@@ -260,25 +250,25 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Style Selector='Border'>
         <Setter Property='Background' Value='{StaticResource brush}'/>
     </Style>
-</Styles>";
-
-            using (StyledWindow(assets: ("test:style.xaml", styleXaml)))
-            {
-                var xaml = @"
+</Styles>"),
+                new RuntimeXamlLoaderDocument(@"
 <Window xmlns='https://github.com/avaloniaui'
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
     <Window.Styles>
-        <StyleInclude Source='test:style.xaml'/>
+        <StyleInclude Source='avares://Tests/Style.xaml'/>
     </Window.Styles>
     <Border Name='border'/>
-</Window>";
+</Window>")
+            };
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+            using (StyledWindow())
+            {
+                var compiled = AvaloniaRuntimeXamlLoader.LoadGroup(documents);
+                var window = Assert.IsType<Window>(compiled[1]);
                 var border = window.FindControl<Border>("border");
-                var brush = (SolidColorBrush)border.Background;
+                var brush = (ISolidColorBrush)border.Background;
 
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
@@ -296,12 +286,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
             var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
@@ -316,17 +305,18 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     </Styles.Resources>
 </Styles>";
 
-            var loader = new AvaloniaXamlLoader();
-            var styles = (Styles)loader.Load(xaml);
+            var styles = (Styles)AvaloniaRuntimeXamlLoader.Load(xaml);
             var brush = (SolidColorBrush)styles.Resources["brush"];
 
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
         [Fact]
         public void StaticResource_Can_Be_Assigned_To_Property_In_ControlTemplate_In_Styles_File()
         {
-            var styleXaml = @"
+            var documents = new[]
+            {
+                new RuntimeXamlLoaderDocument(new Uri("avares://Tests/Style.xaml"), @"
 <Styles xmlns='https://github.com/avaloniaui'
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
     <Styles.Resources>
@@ -340,29 +330,29 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
             </ControlTemplate>
         </Setter>
     </Style>
-</Styles>";
-
-            using (StyledWindow(assets: ("test:style.xaml", styleXaml)))
-            {
-                var xaml = @"
+</Styles>"),
+                new RuntimeXamlLoaderDocument(@"
 <Window xmlns='https://github.com/avaloniaui'
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
     <Window.Styles>
-        <StyleInclude Source='test:style.xaml'/>
+        <StyleInclude Source='avares://Tests/Style.xaml'/>
     </Window.Styles>
     <Button Name='button'/>
-</Window>";
+</Window>")
+            };
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+            using (StyledWindow())
+            {
+                var compiled = AvaloniaRuntimeXamlLoader.LoadGroup(documents);
+                var window = Assert.IsType<Window>(compiled[1]);
                 var button = window.FindControl<Button>("button");
 
                 window.Show();
 
                 var border = (Border)button.GetVisualChildren().Single();
-                var brush = (SolidColorBrush)border.Background;
-                
-                Assert.Equal(0xff506070, brush.Color.ToUint32());
+                var brush = (ISolidColorBrush)border.Background;
+
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
             }
         }
 
@@ -381,8 +371,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <ListBox Name='listBox' ItemTemplate='{StaticResource PurpleData}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var listBox = userControl.FindControl<ListBox>("listBox");
 
             Assert.NotNull(listBox.ItemTemplate);
@@ -404,8 +393,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <TextBlock Name='textBlock' Text='{Binding Converter={StaticResource converter}}'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
                 var textBlock = window.FindControl<TextBlock>("textBlock");
 
                 window.DataContext = "foo";
@@ -434,8 +422,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <ContentPresenter Name='presenter' Content='foo' ContentTemplate='{StaticResource PurpleData}'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
 
                 window.DataContext = "foo";
                 var presenter = window.FindControl<ContentPresenter>("presenter");
@@ -476,8 +463,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <ContentPresenter Content='foo' ContentTemplate='{StaticResource WhiteData}'/>
 </Window>";
 
-                var loader = new AvaloniaXamlLoader();
-                var window = (Window)loader.Load(xaml);
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
 
                 window.Show();
 
@@ -485,6 +471,40 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
 
                 Assert.NotNull(textBlock);
                 Assert.Equal("White-bar", textBlock.Text);
+            }
+        }
+
+        [Fact]
+        public void StaticResource_Is_Correctly_Chosen_For_DeferredContent()
+        {
+            using (StyledWindow())
+            {
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(@"
+<Window xmlns='https://github.com/avaloniaui'
+        xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
+        xmlns:local='clr-namespace:Avalonia.Markup.Xaml.UnitTests.MarkupExtensions;assembly=Avalonia.Markup.Xaml.UnitTests'>
+
+  <Window.Resources>
+    <Color x:Key='Color'>Purple</Color>
+  </Window.Resources>
+
+  <Border>
+   <Border.Resources>
+      <Color x:Key='Color'>Red</Color>
+      <SolidColorBrush x:Key='Brush' Color='{StaticResource Color}' />
+    </Border.Resources>
+    <TextBlock Foreground='{StaticResource Brush}' />
+  </Border>
+
+</Window>");
+
+                window.Show();
+
+                var textBlock = window.GetVisualDescendants().OfType<TextBlock>().Single();
+
+                Assert.NotNull(textBlock);
+                var brush = Assert.IsAssignableFrom<ISolidColorBrush>(textBlock.Foreground);
+                Assert.Equal(Colors.Red, brush.Color);
             }
         }
 
@@ -501,20 +521,66 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
     <Border Name='border' Background='{StaticResource brush}'/>
 </UserControl>";
 
-            var loader = new AvaloniaXamlLoader();
-            var userControl = (UserControl)loader.Load(xaml);
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
             var border = userControl.FindControl<Border>("border");
 
-            var brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
 
             userControl.Content = null;
 
-            brush = (SolidColorBrush)border.Background;
-            Assert.Equal(0xff506070, brush.Color.ToUint32());
+            brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
         }
 
-        private IDisposable StyledWindow(params (string, string)[] assets)
+        [Fact]
+        public void Automatically_Converts_Color_To_SolidColorBrush()
+        {
+            var xaml = @"
+<UserControl xmlns='https://github.com/avaloniaui'
+             xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
+    <UserControl.Resources>
+        <Color x:Key='color'>#ff506070</Color>
+    </UserControl.Resources>
+
+    <Border Name='border' Background='{StaticResource color}'/>
+</UserControl>";
+
+            var userControl = (UserControl)AvaloniaRuntimeXamlLoader.Load(xaml);
+            var border = userControl.FindControl<Border>("border");
+
+            var brush = (ISolidColorBrush)border.Background;
+            Assert.Equal(0xff506070, brush.Color.ToUInt32());
+        }
+
+        [Fact]
+        public void Automatically_Converts_Color_To_SolidColorBrush_From_Setter()
+        {
+            using (StyledWindow())
+            {
+                var xaml = @"
+<Window xmlns='https://github.com/avaloniaui'
+        xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
+    <Window.Resources>
+        <Color x:Key='color'>#ff506070</Color>
+    </Window.Resources>
+    <Window.Styles>
+        <Style Selector='Button'>
+            <Setter Property='Background' Value='{StaticResource color}'/>
+        </Style>
+    </Window.Styles>
+    <Button Name='button'/>
+</Window>";
+
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
+                var button = window.FindControl<Button>("button");
+                var brush = (ISolidColorBrush)button.Background;
+
+                Assert.Equal(0xff506070, brush.Color.ToUInt32());
+            }
+        }
+
+        private static IDisposable StyledWindow(params (string, string)[] assets)
         {
             var services = TestServices.StyledWindow.With(
                 assetLoader: new MockAssetLoader(assets),
@@ -526,7 +592,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
             return UnitTestApplication.Start(services);
         }
 
-        private Style WindowStyle()
+        private static Style WindowStyle()
         {
             return new Style(x => x.OfType<Window>())
             {
@@ -534,12 +600,12 @@ namespace Avalonia.Markup.Xaml.UnitTests.MarkupExtensions
                 {
                     new Setter(
                         Window.TemplateProperty,
-                        new FuncControlTemplate<Window>(x =>
+                        new FuncControlTemplate<Window>((x, scope) =>
                             new ContentPresenter
                             {
                                 Name = "PART_ContentPresenter",
                                 [!ContentPresenter.ContentProperty] = x[!Window.ContentProperty],
-                            }))
+                            }.RegisterInNameScope(scope)))
                 }
             };
         }

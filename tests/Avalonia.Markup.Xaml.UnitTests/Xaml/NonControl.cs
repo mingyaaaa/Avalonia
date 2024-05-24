@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Controls;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Xaml
@@ -23,19 +20,16 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
         public Control Control
         {
-            get { return GetValue(ControlProperty); }
-            set { SetValue(ControlProperty, value); }
+            get => GetValue(ControlProperty);
+            set => SetValue(ControlProperty, value);
         }
 
         public string String
         {
-            get { return GetValue(StringProperty); }
-            set { SetValue(StringProperty, value); }
+            get => GetValue(StringProperty);
+            set => SetValue(StringProperty, value);
         }
 
-        public string Bar
-        {
-            get { return GetValue(BarProperty); }
-        }
+        public string Bar => GetValue(BarProperty);
     }
 }

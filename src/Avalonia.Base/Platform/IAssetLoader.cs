@@ -1,16 +1,15 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using Avalonia.Metadata;
 
 namespace Avalonia.Platform
 {
     /// <summary>
     /// Loads assets compiled into the application binary.
     /// </summary>
+    [Unstable("IAssetLoader interface and AvaloniaLocator usage is considered unstable. Please use AssetLoader static class instead.")]
     public interface IAssetLoader
     {
         /// <summary>
@@ -30,7 +29,7 @@ namespace Avalonia.Platform
         /// A base URI to use if <paramref name="uri"/> is relative.
         /// </param>
         /// <returns>True if the asset could be found; otherwise false.</returns>
-        bool Exists(Uri uri, Uri baseUri = null);
+        bool Exists(Uri uri, Uri? baseUri = null);
 
         /// <summary>
         /// Opens the asset with the requested URI.
@@ -43,7 +42,7 @@ namespace Avalonia.Platform
         /// <exception cref="FileNotFoundException">
         /// The asset could not be found.
         /// </exception>
-        Stream Open(Uri uri, Uri baseUri = null);
+        Stream Open(Uri uri, Uri? baseUri = null);
 
         /// <summary>
         /// Opens the asset with the requested URI and returns the asset stream and the
@@ -59,7 +58,7 @@ namespace Avalonia.Platform
         /// <exception cref="FileNotFoundException">
         /// The asset could not be found.
         /// </exception>
-        (Stream stream, Assembly assembly) OpenAndGetAssembly(Uri uri, Uri baseUri = null);
+        (Stream stream, Assembly assembly) OpenAndGetAssembly(Uri uri, Uri? baseUri = null);
 
         /// <summary>
         /// Extracts assembly information from URI
@@ -69,7 +68,7 @@ namespace Avalonia.Platform
         /// A base URI to use if <paramref name="uri"/> is relative.
         /// </param>
         /// <returns>Assembly associated with the Uri</returns>
-        Assembly GetAssembly(Uri uri, Uri baseUri = null);
+        Assembly? GetAssembly(Uri uri, Uri? baseUri = null);
 
         /// <summary>
         /// Gets all assets of a folder and subfolders that match specified uri.
@@ -77,6 +76,16 @@ namespace Avalonia.Platform
         /// <param name="uri">The URI.</param>
         /// <param name="baseUri">The base URI.</param>
         /// <returns>All matching assets as a tuple of the absolute path to the asset and the assembly containing the asset</returns>
-        IEnumerable<Uri> GetAssets(Uri uri, Uri baseUri);
+        IEnumerable<Uri> GetAssets(Uri uri, Uri? baseUri);
+
+        /// <summary>
+        /// Removes the assembly from the cache.
+        /// </summary>
+        /// <param name="name">The Assemblies.First().GetName().Name</param>
+        void InvalidateAssemblyCache(string name);
+        /// <summary>
+        /// Removes all assemblies from the cache.
+        /// </summary>
+        void InvalidateAssemblyCache();
     }
 }

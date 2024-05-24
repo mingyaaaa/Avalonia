@@ -1,5 +1,6 @@
-﻿using System;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Primitives;
+using Avalonia.Reactive;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 
@@ -14,6 +15,9 @@ namespace Avalonia.Controls
     /// <summary>
     /// Represents a spinner control that includes two Buttons.
     /// </summary>
+    [TemplatePart("PART_DecreaseButton", typeof(Button))]
+    [TemplatePart("PART_IncreaseButton", typeof(Button))]
+    [PseudoClasses(":left", ":right")]
     public class ButtonSpinner : Spinner
     {
         /// <summary>
@@ -34,18 +38,23 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<Location> ButtonSpinnerLocationProperty =
             AvaloniaProperty.Register<ButtonSpinner, Location>(nameof(ButtonSpinnerLocation), Location.Right);
 
-        private Button _decreaseButton;
+        public ButtonSpinner()
+        {
+            UpdatePseudoClasses(ButtonSpinnerLocation);
+        }
+
+        private Button? _decreaseButton;
         /// <summary>
         /// Gets or sets the DecreaseButton template part.
         /// </summary>
-        private Button DecreaseButton
+        private Button? DecreaseButton
         {
-            get { return _decreaseButton; }
+            get => _decreaseButton;
             set
             {
                 if (_decreaseButton != null)
                 {
-                    _decreaseButton.Click  -= OnButtonClick;
+                    _decreaseButton.Click -= OnButtonClick;
                 }
                 _decreaseButton = value;
                 if (_decreaseButton != null)
@@ -55,16 +64,13 @@ namespace Avalonia.Controls
             }
         }
 
-        private Button _increaseButton;
+        private Button? _increaseButton;
         /// <summary>
         /// Gets or sets the IncreaseButton template part.
         /// </summary>
-        private Button IncreaseButton
+        private Button? IncreaseButton
         {
-            get
-            {
-                return _increaseButton;
-            }
+            get => _increaseButton;
             set
             {
                 if (_increaseButton != null)
@@ -85,8 +91,6 @@ namespace Avalonia.Controls
         static ButtonSpinner()
         {
             AllowSpinProperty.Changed.Subscribe(AllowSpinChanged);
-            PseudoClass<ButtonSpinner, Location>(ButtonSpinnerLocationProperty, location => location == Location.Left, ":left");
-            PseudoClass<ButtonSpinner, Location>(ButtonSpinnerLocationProperty, location => location == Location.Right, ":right");
         }
 
         /// <summary>
@@ -94,8 +98,8 @@ namespace Avalonia.Controls
         /// </summary>
         public bool AllowSpin
         {
-            get { return GetValue(AllowSpinProperty); }
-            set { SetValue(AllowSpinProperty, value); }
+            get => GetValue(AllowSpinProperty);
+            set => SetValue(AllowSpinProperty, value);
         }
 
         /// <summary>
@@ -103,8 +107,8 @@ namespace Avalonia.Controls
         /// </summary>
         public bool ShowButtonSpinner
         {
-            get { return GetValue(ShowButtonSpinnerProperty); }
-            set { SetValue(ShowButtonSpinnerProperty, value); }
+            get => GetValue(ShowButtonSpinnerProperty);
+            set => SetValue(ShowButtonSpinnerProperty, value);
         }
 
         /// <summary>
@@ -112,12 +116,12 @@ namespace Avalonia.Controls
         /// </summary>
         public Location ButtonSpinnerLocation
         {
-            get { return GetValue(ButtonSpinnerLocationProperty); }
-            set { SetValue(ButtonSpinnerLocationProperty, value); }
+            get => GetValue(ButtonSpinnerLocationProperty);
+            set => SetValue(ButtonSpinnerLocationProperty, value);
         }
 
         /// <inheritdoc />
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
             IncreaseButton = e.NameScope.Find<Button>("PART_IncreaseButton");
             DecreaseButton = e.NameScope.Find<Button>("PART_DecreaseButton");
@@ -153,6 +157,12 @@ namespace Avalonia.Controls
         /// <inheritdoc />
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            // If XY navigation is enabled - do not spin with arrow keys, instead use spinner buttons.
+            if (this.IsAllowedXYNavigationMode(e.KeyDeviceType))
+            {
+                return;
+            }
+
             switch (e.Key)
             {
                 case Key.Up:
@@ -190,14 +200,25 @@ namespace Avalonia.Controls
         protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
         {
             base.OnPointerWheelChanged(e);
-            if (!e.Handled && AllowSpin)
+
+            if (AllowSpin && IsKeyboardFocusWithin)
             {
                 if (e.Delta.Y != 0)
                 {
                     var spinnerEventArgs = new SpinEventArgs(SpinEvent, (e.Delta.Y < 0) ? SpinDirection.Decrease : SpinDirection.Increase, true);
                     OnSpin(spinnerEventArgs);
-                    e.Handled = spinnerEventArgs.Handled;
+                    e.Handled = true;
                 }
+            }
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == ButtonSpinnerLocationProperty)
+            {
+                UpdatePseudoClasses(change.GetNewValue<Location>());
             }
         }
 
@@ -224,8 +245,8 @@ namespace Avalonia.Controls
         {
             if (e.Sender is ButtonSpinner spinner)
             {
-                var oldValue = (bool)e.OldValue;
-                var newValue = (bool)e.NewValue;
+                var oldValue = (bool)e.OldValue!;
+                var newValue = (bool)e.NewValue!;
                 spinner.OnAllowSpinChanged(oldValue, newValue);
             }
         }
@@ -251,13 +272,19 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="sender">The event sender.</param>
         /// <param name="e">The event args.</param>
-        private void OnButtonClick(object sender, RoutedEventArgs e)
+        private void OnButtonClick(object? sender, RoutedEventArgs e)
         {
             if (AllowSpin)
             {
                 var direction = sender == IncreaseButton ? SpinDirection.Increase : SpinDirection.Decrease;
                 OnSpin(new SpinEventArgs(SpinEvent, direction));
             }
+        }
+
+        private void UpdatePseudoClasses(Location location)
+        {
+            PseudoClasses.Set(":left", location == Location.Left);
+            PseudoClasses.Set(":right", location == Location.Right);
         }
     }
 }

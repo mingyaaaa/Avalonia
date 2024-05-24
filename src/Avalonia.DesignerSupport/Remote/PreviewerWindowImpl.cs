@@ -1,15 +1,17 @@
 ﻿using System;
-using System.Reactive.Disposables;
 using Avalonia.Controls;
+using Avalonia.Controls.Platform;
 using Avalonia.Controls.Remote.Server;
+using Avalonia.Input;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Remote.Protocol;
 using Avalonia.Remote.Protocol.Viewport;
 using Avalonia.Threading;
 
 namespace Avalonia.DesignerSupport.Remote
 {
-    class PreviewerWindowImpl : RemoteServerTopLevelImpl, IWindowImpl, IEmbeddableWindowImpl
+    class PreviewerWindowImpl : RemoteServerTopLevelImpl, IWindowImpl
     {
         private readonly IAvaloniaRemoteTransportConnection _transport;
 
@@ -19,7 +21,7 @@ namespace Avalonia.DesignerSupport.Remote
             ClientSize = new Size(1, 1);
         }
 
-        public void Show()
+        public void Show(bool activate, bool isDialog)
         {
         }
 
@@ -27,49 +29,54 @@ namespace Avalonia.DesignerSupport.Remote
         {
         }
 
-        public void BeginMoveDrag()
+        public void BeginMoveDrag(PointerPressedEventArgs e)
         {
         }
 
-        public void BeginResizeDrag(WindowEdge edge)
+        public void BeginResizeDrag(WindowEdge edge, PointerPressedEventArgs e)
         {
         }
 
+        public double DesktopScaling => 1.0;
         public PixelPoint Position { get; set; }
         public Action<PixelPoint> PositionChanged { get; set; }
         public Action Deactivated { get; set; }
         public Action Activated { get; set; }
-        public Func<bool> Closing { get; set; }
+        public Func<WindowCloseReason, bool> Closing { get; set; }
         public IPlatformHandle Handle { get; }
         public WindowState WindowState { get; set; }
         public Action<WindowState> WindowStateChanged { get; set; }
-        public Size MaxClientSize { get; } = new Size(4096, 4096);
-        public event Action LostFocus
-        {
-            add {}
-            remove {}
-        }
+        public Size MaxAutoSizeHint { get; } = new Size(4096, 4096);
 
         protected override void OnMessage(IAvaloniaRemoteTransportConnection transport, object obj)
         {
             // In previewer mode we completely ignore client-side viewport size
             if (obj is ClientViewportAllocatedMessage alloc)
             {
-                Dispatcher.UIThread.Post(() => SetDpi(new Vector(alloc.DpiX, alloc.DpiY)));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    RenderScaling = alloc.DpiX / 96.0;
+                    RenderAndSendFrameIfNeeded();
+                });
                 return;
             }
             base.OnMessage(transport, obj);
         }
         
-        public void Resize(Size clientSize)
+        public void Resize(Size clientSize, WindowResizeReason reason)
         {
             _transport.Send(new RequestViewportResizeMessage
             {
-                Width = clientSize.Width,
-                Height = clientSize.Height
+                Width = Math.Ceiling(clientSize.Width * RenderScaling),
+                Height = Math.Ceiling(clientSize.Height * RenderScaling)
             });
             ClientSize = clientSize;
-            RenderIfNeeded();
+            RenderAndSendFrameIfNeeded();
+        }
+
+        public void Move(PixelPoint point)
+        {
+            
         }
 
         public void SetMinMaxSize(Size minSize, Size maxSize)
@@ -77,7 +84,28 @@ namespace Avalonia.DesignerSupport.Remote
         }
 
         public IScreenImpl Screen { get; } = new ScreenStub();
+        public Action GotInputWhenDisabled { get; set; }        
+        
+        public Action<bool> ExtendClientAreaToDecorationsChanged { get; set; }
 
+        public Thickness ExtendedMargins { get; } = new Thickness();
+
+        public bool IsClientAreaExtendedToDecorations { get; }
+
+        public Thickness OffScreenMargin { get; } = new Thickness();
+
+        public bool NeedsManagedDecorations => false;
+
+        public override object TryGetFeature(Type featureType)
+        {
+            if (featureType == typeof(IStorageProvider))
+            {
+                return new NoopStorageProvider();
+            }
+            
+            return base.TryGetFeature(featureType);
+        }
+        
         public void Activate()
         {
         }
@@ -86,11 +114,7 @@ namespace Avalonia.DesignerSupport.Remote
         {
         }
 
-        public void ShowDialog(IWindowImpl parent)
-        {
-        }
-
-        public void SetSystemDecorations(bool enabled)
+        public void SetSystemDecorations(SystemDecorations enabled)
         {
         }
 
@@ -109,5 +133,27 @@ namespace Avalonia.DesignerSupport.Remote
         public void SetTopmost(bool value)
         {
         }
+
+        public void SetParent(IWindowImpl parent)
+        {
+        }
+
+        public void SetEnabled(bool enable)
+        {
+        }
+
+        public void SetExtendClientAreaToDecorationsHint(bool extendIntoClientAreaHint)
+        {            
+        }
+
+        public void SetExtendClientAreaChromeHints(ExtendClientAreaChromeHints hints)
+        {            
+        }
+
+        public void SetExtendClientAreaTitleBarHeightHint(double titleBarHeight)
+        {            
+        }
+
+        public void GetWindowsZOrder(Span<Window> windows, Span<long> zOrder) => throw new NotSupportedException();
     }
 }

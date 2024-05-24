@@ -6,20 +6,23 @@ using Avalonia.Input.Platform;
 using Avalonia.Platform;
 using Avalonia.Remote.Protocol;
 using Avalonia.Rendering;
+using Avalonia.Threading;
 
 namespace Avalonia.DesignerSupport.Remote
 {
-    class PreviewerWindowingPlatform : IWindowingPlatform, IPlatformSettings
+    class PreviewerWindowingPlatform : IWindowingPlatform
     {
         static readonly IKeyboardDevice Keyboard = new KeyboardDevice();
         private static IAvaloniaRemoteTransportConnection s_transport;
         private static DetachableTransportConnection s_lastWindowTransport;
         private static PreviewerWindowImpl s_lastWindow;
         public static List<object> PreFlightMessages = new List<object>();
-        
+
+        public ITrayIconImpl CreateTrayIcon() => null;
+
         public IWindowImpl CreateWindow() => new WindowStub();
 
-        public IEmbeddableWindowImpl CreateEmbeddableWindow()
+        public IWindowImpl CreateEmbeddableWindow()
         {
             if (s_lastWindow != null)
             {
@@ -40,29 +43,20 @@ namespace Avalonia.DesignerSupport.Remote
             return s_lastWindow;
         }
 
-        public IPopupImpl CreatePopup() => new WindowStub();
-
         public static void Initialize(IAvaloniaRemoteTransportConnection transport)
         {
             s_transport = transport;
             var instance = new PreviewerWindowingPlatform();
-            var threading = new InternalPlatformThreadingInterface();
             AvaloniaLocator.CurrentMutable
-                .Bind<IClipboard>().ToSingleton<ClipboardStub>()
-                .Bind<IStandardCursorFactory>().ToSingleton<CursorFactoryStub>()
+                .Bind<ICursorFactory>().ToSingleton<CursorFactoryStub>()
                 .Bind<IKeyboardDevice>().ToConstant(Keyboard)
-                .Bind<IPlatformSettings>().ToConstant(instance)
-                .Bind<IPlatformThreadingInterface>().ToConstant(threading)
-                .Bind<IRenderLoop>().ToConstant(new RenderLoop())
-                .Bind<IRenderTimer>().ToConstant(threading)
-                .Bind<ISystemDialogImpl>().ToSingleton<SystemDialogsStub>()
+                .Bind<IPlatformSettings>().ToSingleton<DefaultPlatformSettings>()
+                .Bind<IDispatcherImpl>().ToConstant(new ManagedDispatcherImpl(null))
+                .Bind<IRenderTimer>().ToConstant(new UiThreadRenderTimer(60))
                 .Bind<IWindowingPlatform>().ToConstant(instance)
                 .Bind<IPlatformIconLoader>().ToSingleton<IconLoaderStub>()
                 .Bind<PlatformHotkeyConfiguration>().ToSingleton<PlatformHotkeyConfiguration>();
 
         }
-
-        public Size DoubleClickSize { get; } = new Size(2, 2);
-        public TimeSpan DoubleClickTime { get; } = TimeSpan.FromMilliseconds(500);
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 #ifndef COM_H_INCLUDED
@@ -31,6 +28,7 @@ typedef DWORD ULONG;
 #define E_UNEXPECTED                     0x8000FFFFL
 #define E_HANDLE                         0x80070006L
 #define E_INVALIDARG                     0x80070057L
+#define COR_E_INVALIDOPERATION 0x80131509L
 
 struct IUnknown
 {

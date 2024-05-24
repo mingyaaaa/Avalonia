@@ -1,8 +1,8 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
+using System.Collections.Generic;
 using Avalonia.Data;
+using Avalonia.Data.Core;
+using Avalonia.PropertyStore;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests
@@ -28,7 +28,7 @@ namespace Avalonia.Base.UnitTests
         [Fact]
         public void GetMetadata_Returns_Supplied_Value()
         {
-            var metadata = new PropertyMetadata();
+            var metadata = new TestMetadata();
             var target = new TestProperty<string>("test", typeof(Class1), metadata);
 
             Assert.Same(metadata, target.GetMetadata<Class1>());
@@ -37,26 +37,30 @@ namespace Avalonia.Base.UnitTests
         [Fact]
         public void GetMetadata_Returns_Supplied_Value_For_Derived_Class()
         {
-            var metadata = new PropertyMetadata();
+            var metadata = new TestMetadata();
             var target = new TestProperty<string>("test", typeof(Class1), metadata);
 
             Assert.Same(metadata, target.GetMetadata<Class2>());
         }
 
         [Fact]
-        public void GetMetadata_Returns_Supplied_Value_For_Unrelated_Class()
+        public void GetMetadata_Returns_TypeSafe_Metadata_For_Unrelated_Class()
         {
-            var metadata = new PropertyMetadata();
+            var metadata = new TestMetadata(BindingMode.OneWayToSource, true, x => { _ = (StyledElement)x; });
             var target = new TestProperty<string>("test", typeof(Class3), metadata);
 
-            Assert.Same(metadata, target.GetMetadata<Class2>());
+            var targetMetadata = (TestMetadata)target.GetMetadata<Class2>();
+
+            Assert.Equal(metadata.DefaultBindingMode, targetMetadata.DefaultBindingMode);
+            Assert.Equal(metadata.EnableDataValidation, targetMetadata.EnableDataValidation);
+            Assert.Equal(null, targetMetadata.OwnerSpecificAction);
         }
 
         [Fact]
         public void GetMetadata_Returns_Overridden_Value()
         {
-            var metadata = new PropertyMetadata();
-            var overridden = new PropertyMetadata();
+            var metadata = new TestMetadata();
+            var overridden = new TestMetadata();
             var target = new TestProperty<string>("test", typeof(Class1), metadata);
 
             target.OverrideMetadata<Class2>(overridden);
@@ -67,9 +71,9 @@ namespace Avalonia.Base.UnitTests
         [Fact]
         public void OverrideMetadata_Should_Merge_Values()
         {
-            var metadata = new PropertyMetadata(BindingMode.TwoWay);
-            var notify = (Action<IAvaloniaObject, bool>)((a, b) => { });
-            var overridden = new PropertyMetadata();
+            var metadata = new TestMetadata(BindingMode.TwoWay);
+            var notify = (Action<AvaloniaObject, bool>)((a, b) => { });
+            var overridden = new TestMetadata();
             var target = new TestProperty<string>("test", typeof(Class1), metadata);
 
             target.OverrideMetadata<Class2>(overridden);
@@ -79,21 +83,24 @@ namespace Avalonia.Base.UnitTests
         }
 
         [Fact]
-        public void Initialized_Observable_Fired()
+        public void Default_Metadata_Cannot_Be_Changed_After_Property_Initialization()
         {
-            bool invoked = false;
+            var metadata = new TestMetadata();
+            var property = new TestProperty<string>("test", typeof(Class1), metadata);
 
-            Class1.FooProperty.Initialized.Subscribe(x =>
-            {
-                Assert.Equal(AvaloniaProperty.UnsetValue, x.OldValue);
-                Assert.Equal("default", x.NewValue);
-                Assert.Equal(BindingPriority.Unset, x.Priority);
-                invoked = true;
-            });
+            Assert.Throws<InvalidOperationException>(() => metadata.Merge(new TestMetadata(), property));
+        }
 
-            var target = new Class1();
+        [Fact]
+        public void Overridden_Metadata_Cannot_Be_Changed_After_OverrideMetadata()
+        {
+            var metadata = new TestMetadata(BindingMode.TwoWay);
+            var overridden = new TestMetadata();
+            var property = new TestProperty<string>("test", typeof(Class1), metadata);
 
-            Assert.True(invoked);
+            property.OverrideMetadata<Class2>(overridden);
+
+            Assert.Throws<InvalidOperationException>(() => overridden.Merge(new TestMetadata(), property));
         }
 
         [Fact]
@@ -102,10 +109,34 @@ namespace Avalonia.Base.UnitTests
             var target = new Class1();
             string value = null;
 
-            Class1.FooProperty.Changed.Subscribe(x => value = (string)x.NewValue);
+            Class1.FooProperty.Changed.Subscribe(x => value = x.NewValue.GetValueOrDefault());
             target.SetValue(Class1.FooProperty, "newvalue");
 
             Assert.Equal("newvalue", value);
+        }
+
+        [Fact]
+        public void Changed_Observable_Fired_Only_On_Effective_Value_Change()
+        {
+            var target = new Class1();
+            var result = new List<string>();
+
+            Class1.FooProperty.Changed.Subscribe(x => result.Add(x.NewValue.GetValueOrDefault()));
+            target.SetValue(Class1.FooProperty, "animated", BindingPriority.Animation);
+            target.SetValue(Class1.FooProperty, "local");
+
+            Assert.Equal(new[] { "animated" }, result);
+        }
+
+        [Fact]
+        public void Notify_Fired_Only_On_Effective_Value_Change()
+        {
+            var target = new Class1();
+
+            target.SetValue(Class1.FooProperty, "animated", BindingPriority.Animation);
+            target.SetValue(Class1.FooProperty, "local");
+
+            Assert.Equal(2, target.NotifyCount);
         }
 
         [Fact]
@@ -124,28 +155,103 @@ namespace Avalonia.Base.UnitTests
         [Fact]
         public void PropertyMetadata_BindingMode_Default_Returns_OneWay()
         {
-            var data = new PropertyMetadata(defaultBindingMode: BindingMode.Default);
+            var data = new TestMetadata(defaultBindingMode: BindingMode.Default);
 
             Assert.Equal(BindingMode.OneWay, data.DefaultBindingMode);
         }
 
+        private class TestMetadata : AvaloniaPropertyMetadata
+        {
+            public Action<AvaloniaObject> OwnerSpecificAction { get; }
+
+            public TestMetadata(BindingMode defaultBindingMode = BindingMode.Default, 
+                bool? enableDataValidation = null,
+                Action<AvaloniaObject> ownerSpecificAction = null) 
+                : base(defaultBindingMode, enableDataValidation)
+            {
+                OwnerSpecificAction = ownerSpecificAction;
+            }
+
+            public override AvaloniaPropertyMetadata GenerateTypeSafeMetadata() =>
+                new TestMetadata(DefaultBindingMode, EnableDataValidation, null);
+        }
+
         private class TestProperty<TValue> : AvaloniaProperty<TValue>
         {
-            public TestProperty(string name, Type ownerType, PropertyMetadata metadata = null)
-                : base(name, ownerType, metadata ?? new PropertyMetadata())
+            public TestProperty(string name, Type ownerType, TestMetadata metadata = null)
+                : base(name, ownerType, ownerType, metadata ?? new TestMetadata())
             {
             }
 
-            public void OverrideMetadata<T>(PropertyMetadata metadata)
+            public void OverrideMetadata<T>(AvaloniaPropertyMetadata metadata)
             {
                 OverrideMetadata(typeof(T), metadata);
+            }
+
+            internal override IDisposable RouteBind(
+                AvaloniaObject o,
+                IObservable<object> source,
+                BindingPriority priority)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override void RouteClearValue(AvaloniaObject o)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override void RouteCoerceDefaultValue(AvaloniaObject o)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override object RouteGetValue(AvaloniaObject o)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override object RouteGetBaseValue(AvaloniaObject o)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override IDisposable RouteSetValue(
+                AvaloniaObject o,
+                object value,
+                BindingPriority priority)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override void RouteSetCurrentValue(AvaloniaObject o, object value)
+            {
+                throw new NotImplementedException();
+            }
+
+            internal override EffectiveValue CreateEffectiveValue(AvaloniaObject o)
+            {
+                throw new NotImplementedException();
             }
         }
 
         private class Class1 : AvaloniaObject
         {
             public static readonly StyledProperty<string> FooProperty =
-                AvaloniaProperty.Register<Class1, string>("Foo", "default");
+                AvaloniaProperty.Register<Class1, string>("Foo", "default",
+                    inherits: true,
+                    defaultBindingMode: BindingMode.OneWay,
+                    validate: null,
+                    coerce: null,
+                    enableDataValidation: false,
+                    notifying: FooNotifying);
+
+            public int NotifyCount { get; private set; }
+
+            private static void FooNotifying(AvaloniaObject o, bool n)
+            {
+                ++((Class1)o).NotifyCount;
+            }
         }
 
         private class Class2 : Class1

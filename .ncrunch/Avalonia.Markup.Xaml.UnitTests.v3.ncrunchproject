@@ -1,5 +1,7 @@
 ﻿<ProjectConfiguration>
   <Settings>
-    <PreviouslyBuiltSuccessfully>True</PreviouslyBuiltSuccessfully>
+    <CustomBuildProperties>
+      <Value>TargetFramework = net8.0</Value>
+    </CustomBuildProperties>
   </Settings>
 </ProjectConfiguration>

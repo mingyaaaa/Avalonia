@@ -3,6 +3,9 @@
 // Please see http://go.microsoft.com/fwlink/?LinkID=131993 for details.
 // All other rights reserved.
 
+using Avalonia.Automation.Peers;
+using Avalonia.Controls.Automation.Peers;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -12,6 +15,8 @@ namespace Avalonia.Controls
     /// <summary>
     /// Represents an individual <see cref="T:Avalonia.Controls.DataGrid" /> cell.
     /// </summary>
+    [TemplatePart(DATAGRIDCELL_elementRightGridLine, typeof(Rectangle))]
+    [PseudoClasses(":selected", ":current", ":edited", ":invalid", ":focus")]
     public class DataGridCell : ContentControl
     {
         private const string DATAGRIDCELL_elementRightGridLine = "PART_RightGridLine";
@@ -19,7 +24,7 @@ namespace Avalonia.Controls
         private Rectangle _rightGridLine;
         private DataGridColumn _owningColumn;
 
-        bool _isValid;
+        bool _isValid = true;
 
         public static readonly DirectProperty<DataGridCell, bool> IsValidProperty =
             AvaloniaProperty.RegisterDirect<DataGridCell, bool>(
@@ -29,7 +34,9 @@ namespace Avalonia.Controls
         static DataGridCell()
         {
             PointerPressedEvent.AddClassHandler<DataGridCell>(
-                x => x.DataGridCell_PointerPressed, handledEventsToo: true);
+                (x,e) => x.DataGridCell_PointerPressed(e), handledEventsToo: true);
+            FocusableProperty.OverrideDefaultValue<DataGridCell>(true);
+            IsTabStopProperty.OverrideDefaultValue<DataGridCell>(false);
         }
         public DataGridCell()
         { }
@@ -118,13 +125,16 @@ namespace Avalonia.Controls
             }
         }
 
+        protected override AutomationPeer OnCreateAutomationPeer()
+        {
+            return new DataGridCellAutomationPeer(this);
+        }
+
         /// <summary>
         /// Builds the visual tree for the cell control when a new template is applied.
         /// </summary>
-        protected override void OnTemplateApplied(TemplateAppliedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            base.OnTemplateApplied(e);
-
             UpdatePseudoClasses();
             _rightGridLine = e.NameScope.Find<Rectangle>(DATAGRIDCELL_elementRightGridLine);
             if (_rightGridLine != null && OwningColumn == null)
@@ -138,18 +148,18 @@ namespace Avalonia.Controls
             }
 
         }
-        protected override void OnPointerEnter(PointerEventArgs e)
+        protected override void OnPointerEntered(PointerEventArgs e)
         {
-            base.OnPointerEnter(e);
+            base.OnPointerEntered(e);
 
             if (OwningRow != null)
             {
                 IsMouseOver = true;
             }
         }
-        protected override void OnPointerLeave(PointerEventArgs e)
+        protected override void OnPointerExited(PointerEventArgs e)
         {
-            base.OnPointerLeave(e);
+            base.OnPointerExited(e);
 
             if (OwningRow != null)
             {
@@ -161,32 +171,66 @@ namespace Avalonia.Controls
         private void DataGridCell_PointerPressed(PointerPressedEventArgs e)
         {
             // OwningGrid is null for TopLeftHeaderCell and TopRightHeaderCell because they have no OwningRow
-            if (OwningGrid != null)
+            if (OwningGrid == null)
             {
-                OwningGrid.OnCellPointerPressed(new DataGridCellPointerPressedEventArgs(this, OwningRow, OwningColumn, e));
-                if (e.MouseButton == MouseButton.Left)
+                return;
+            }
+            OwningGrid.OnCellPointerPressed(new DataGridCellPointerPressedEventArgs(this, OwningRow, OwningColumn, e));
+            if (e.Handled)
+            {
+                return;
+            }
+            if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            {
+                if (OwningGrid.IsTabStop)
                 {
-                    if (!e.Handled)
-                    //if (!e.Handled && OwningGrid.IsTabStop)
+                    OwningGrid.Focus();
+                }
+                if (OwningRow != null)
+                {
+                    var handled = OwningGrid.UpdateStateOnMouseLeftButtonDown(e, ColumnIndex, OwningRow.Slot, !e.Handled);
+
+                    // Do not handle PointerPressed with touch or pen,
+                    // so we can start scroll gesture on the same event.
+                    if (e.Pointer.Type != PointerType.Touch && e.Pointer.Type != PointerType.Pen)
                     {
-                        OwningGrid.Focus();
+                        e.Handled = handled;
                     }
-                    if (OwningRow != null)
-                    {
-                        e.Handled = OwningGrid.UpdateStateOnMouseLeftButtonDown(e, ColumnIndex, OwningRow.Slot, !e.Handled);
-                        OwningGrid.UpdatedStateOnMouseLeftButtonDown = true;
-                    }
+                }
+            }
+            else if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+            {
+                if (OwningGrid.IsTabStop)
+                {
+                    OwningGrid.Focus();
+                }
+                if (OwningRow != null)
+                {
+                    e.Handled = OwningGrid.UpdateStateOnMouseRightButtonDown(e, ColumnIndex, OwningRow.Slot, !e.Handled);
                 }
             }
         }
 
         internal void UpdatePseudoClasses()
         {
+            if (OwningGrid == null || OwningColumn == null || OwningRow == null || !OwningRow.IsVisible || OwningRow.Slot == -1)
+            {
+                return;
+            }
 
+            PseudoClasses.Set(":selected", OwningRow.IsSelected);
+
+            PseudoClasses.Set(":current", IsCurrent);
+
+            PseudoClasses.Set(":edited", IsEdited);
+
+            PseudoClasses.Set(":invalid", !IsValid);
+            
+            PseudoClasses.Set(":focus", OwningGrid.IsFocused && IsCurrent);
         }
 
         // Makes sure the right gridline has the proper stroke and visibility. If lastVisibleColumn is specified, the 
-        // right gridline will be collapsed if this cell belongs to the lastVisibileColumn and there is no filler column
+        // right gridline will be collapsed if this cell belongs to the lastVisibleColumn and there is no filler column
         internal void EnsureGridLine(DataGridColumn lastVisibleColumn)
         {
             if (OwningGrid != null && _rightGridLine != null)
@@ -212,9 +256,15 @@ namespace Avalonia.Controls
             if (column == null)
             {
                 Classes.Clear();
+                ClearValue(ThemeProperty);
             }
             else
             {
+                if (Theme != column.CellTheme)
+                {
+                    Theme = column.CellTheme;
+                }
+                
                 Classes.Replace(column.CellStyleClasses);
             }
         }

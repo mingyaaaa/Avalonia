@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Remote.Protocol;
 using Avalonia.Remote.Protocol.Viewport;
 using Avalonia.Threading;
@@ -18,14 +19,14 @@ namespace Avalonia.Controls.Remote
         }
 
         private readonly IAvaloniaRemoteTransportConnection _connection;
-        private FrameMessage _lastFrame;
-        private WriteableBitmap _bitmap;
+        private FrameMessage? _lastFrame;
+        private WriteableBitmap? _bitmap;
         public RemoteWidget(IAvaloniaRemoteTransportConnection connection)
         {
             Mode = SizingMode.Local;
 
             _connection = connection;
-            _connection.OnMessage += (t, msg) => Dispatcher.UIThread.Post(() => OnMessage(msg));
+            _connection.OnMessage += (t, msg) => Dispatcher.UIThread.Post(OnMessage, msg);
             _connection.Send(new ClientSupportedPixelFormatsMessage
             {
                 Formats = new[]
@@ -38,7 +39,7 @@ namespace Avalonia.Controls.Remote
 
         public SizingMode Mode { get; set; }
 
-        private void OnMessage(object msg)
+        private void OnMessage(object? msg)
         {
             if (msg is FrameMessage frame)
             {
@@ -68,14 +69,18 @@ namespace Avalonia.Controls.Remote
             base.ArrangeCore(finalRect);
         }
 
-        public override void Render(DrawingContext context)
+        public sealed override void Render(DrawingContext context)
         {
-            if (_lastFrame != null)
+            if (_lastFrame != null && _lastFrame.Width != 0 && _lastFrame.Height != 0)
             {
-                var fmt = (PixelFormat) _lastFrame.Format;
+                var fmt = new PixelFormat((PixelFormatEnum) _lastFrame.Format);
                 if (_bitmap == null || _bitmap.PixelSize.Width != _lastFrame.Width ||
                     _bitmap.PixelSize.Height != _lastFrame.Height)
-                    _bitmap = new WriteableBitmap(new PixelSize(_lastFrame.Width, _lastFrame.Height), new Vector(96, 96), fmt);
+                {
+                    _bitmap?.Dispose();
+                    _bitmap = new WriteableBitmap(new PixelSize(_lastFrame.Width, _lastFrame.Height),
+                        new Vector(96, 96), fmt);
+                }
                 using (var l = _bitmap.Lock())
                 {
                     var lineLen = (fmt == PixelFormat.Rgb565 ? 2 : 4) * _lastFrame.Width;
@@ -83,7 +88,7 @@ namespace Avalonia.Controls.Remote
                         Marshal.Copy(_lastFrame.Data, y * _lastFrame.Stride,
                             new IntPtr(l.Address.ToInt64() + l.RowBytes * y), lineLen);
                 }
-                context.DrawImage(_bitmap, 1, new Rect(0, 0, _bitmap.PixelSize.Width, _bitmap.PixelSize.Height),
+                context.DrawImage(_bitmap, new Rect(0, 0, _bitmap.PixelSize.Width, _bitmap.PixelSize.Height),
                     new Rect(Bounds.Size));
             }
             base.Render(context);

@@ -1,9 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.IO;
-using System.Reactive.Disposables;
+using Avalonia.Reactive;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Skia.Helpers;
@@ -14,12 +11,33 @@ namespace Avalonia.Skia
     /// <summary>
     /// Skia render target that writes to a surface.
     /// </summary>
-    internal class SurfaceRenderTarget : IRenderTargetBitmapImpl, IDrawableBitmapImpl
+    internal class SurfaceRenderTarget : IDrawingContextLayerImpl, IDrawableBitmapImpl
     {
-        private readonly SKSurface _surface;
+        private readonly ISkiaSurface _surface;
         private readonly SKCanvas _canvas;
         private readonly bool _disableLcdRendering;
-        private readonly GRContext _grContext;
+        private readonly GRContext? _grContext;
+        private readonly ISkiaGpu? _gpu;
+
+        private class SkiaSurfaceWrapper : ISkiaSurface
+        {
+            private SKSurface? _surface;
+
+            public SKSurface Surface => _surface ?? throw new ObjectDisposedException(nameof(SkiaSurfaceWrapper));
+            public bool CanBlit => false;
+            public void Blit(SKCanvas canvas) => throw new NotSupportedException();
+
+            public SkiaSurfaceWrapper(SKSurface surface)
+            {
+                _surface = surface;
+            }
+
+            public void Dispose()
+            {
+                _surface?.Dispose();
+                _surface = null;
+            }
+        }
         
         /// <summary>
         /// Create new surface render target.
@@ -32,14 +50,27 @@ namespace Avalonia.Skia
 
             _disableLcdRendering = createInfo.DisableTextLcdRendering;
             _grContext = createInfo.GrContext;
-            _surface = CreateSurface(createInfo.GrContext, PixelSize.Width, PixelSize.Height, createInfo.Format);
+            _gpu = createInfo.Gpu;
 
-            _canvas = _surface?.Canvas;
+            ISkiaSurface? surface = null;
 
-            if (_surface == null || _canvas == null)
+            if (!createInfo.DisableManualFbo)
+                surface = _gpu?.TryCreateSurface(PixelSize, createInfo.Session);
+
+            if (surface is null)
             {
-                throw new InvalidOperationException("Failed to create Skia render target surface");
+                if (CreateSurface(createInfo.GrContext, PixelSize.Width, PixelSize.Height, createInfo.Format)
+                    is { } skSurface)
+                {
+                    surface = new SkiaSurfaceWrapper(skSurface);
+                }
             }
+
+            if (surface?.Surface.Canvas is not { } canvas)
+                throw new InvalidOperationException("Failed to create Skia render target surface");
+
+            _surface = surface;
+            _canvas = canvas;
         }
 
         /// <summary>
@@ -50,12 +81,12 @@ namespace Avalonia.Skia
         /// <param name="height">Height.</param>
         /// <param name="format">Format.</param>
         /// <returns></returns>
-        private static SKSurface CreateSurface(GRContext gpu, int width, int height, PixelFormat? format)
+        private static SKSurface? CreateSurface(GRContext? gpu, int width, int height, PixelFormat? format)
         {
             var imageInfo = MakeImageInfo(width, height, format);
             if (gpu != null)
-                return SKSurface.Create(gpu, false, imageInfo);
-            return SKSurface.Create(imageInfo);
+                return SKSurface.Create(gpu, false, imageInfo, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
+            return SKSurface.Create(imageInfo, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
         }
 
         /// <inheritdoc />
@@ -66,22 +97,25 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
         {
             _canvas.RestoreToCount(-1);
             _canvas.ResetMatrix();
             
             var createInfo = new DrawingContextImpl.CreateInfo
             {
-                Canvas = _canvas,
+                Surface = _surface.Surface,
                 Dpi = Dpi,
-                VisualBrushRenderer = visualBrushRenderer,
-                DisableTextLcdRendering = _disableLcdRendering,
-                GrContext = _grContext
+                ScaleDrawingToDpi = useScaledDrawing,
+                DisableSubpixelTextRendering = _disableLcdRendering,
+                GrContext = _grContext,
+                Gpu = _gpu,
             };
 
             return new DrawingContextImpl(createInfo, Disposable.Create(() => Version++));
         }
+
+        public bool IsCorrupted => _gpu?.IsLost == true;
 
         /// <inheritdoc />
         public Vector Dpi { get; }
@@ -92,30 +126,48 @@ namespace Avalonia.Skia
         public int Version { get; private set; } = 1;
 
         /// <inheritdoc />
-        public void Save(string fileName)
+        public void Save(string fileName, int? quality = null)
         {
             using (var image = SnapshotImage())
             {
-                ImageSavingHelper.SaveImage(image, fileName);
+                ImageSavingHelper.SaveImage(image, fileName, quality);
             }
         }
 
         /// <inheritdoc />
-        public void Save(Stream stream)
+        public void Save(Stream stream, int? quality = null)
         {
             using (var image = SnapshotImage())
             {
-                ImageSavingHelper.SaveImage(image, stream);
+                ImageSavingHelper.SaveImage(image, stream, quality);
             }
         }
+
+        public void Blit(IDrawingContextImpl contextImpl)
+        {
+            var context = (DrawingContextImpl)contextImpl;
+
+            if (_surface.CanBlit)
+            {
+                _surface.Surface.Canvas.Flush();
+                _surface.Blit(context.Canvas);
+            }
+            else
+            {
+                var oldMatrix = context.Canvas.TotalMatrix;
+                context.Canvas.ResetMatrix();
+                _surface.Surface.Draw(context.Canvas, 0, 0, null);
+                context.Canvas.SetMatrix(oldMatrix);
+            }
+        }
+
+        public bool CanBlit => true;
 
         /// <inheritdoc />
         public void Draw(DrawingContextImpl context, SKRect sourceRect, SKRect destRect, SKPaint paint)
         {
-            using (var image = SnapshotImage())
-            {
-                context.Canvas.DrawImage(image, sourceRect, destRect, paint);
-            }
+            using var image = SnapshotImage();
+            context.Canvas.DrawImage(image, sourceRect, destRect, paint);
         }
         
         /// <summary>
@@ -124,7 +176,7 @@ namespace Avalonia.Skia
         /// <returns>Image snapshot.</returns>
         public SKImage SnapshotImage()
         {
-            return _surface.Snapshot();
+            return _surface.Surface.Snapshot();
         }
 
         /// <summary>
@@ -174,7 +226,13 @@ namespace Avalonia.Skia
             /// <summary>
             /// GPU-accelerated context (optional)
             /// </summary>
-            public GRContext GrContext;
+            public GRContext? GrContext;
+
+            public ISkiaGpu? Gpu;
+
+            public ISkiaGpuRenderSession? Session;
+
+            public bool DisableManualFbo;
         }
     }
 }

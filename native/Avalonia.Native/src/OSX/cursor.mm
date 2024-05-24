@@ -1,9 +1,5 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 #include "common.h"
 #include "cursor.h"
-#include <map>
 
 class CursorFactory : public ComSingleObject<IAvnCursorFactory, &IID_IAvnCursorFactory>
 {
@@ -13,6 +9,7 @@ class CursorFactory : public ComSingleObject<IAvnCursorFactory, &IID_IAvnCursorF
     Cursor* resizeDownCursor = new Cursor([NSCursor resizeDownCursor]);
     Cursor* resizeUpDownCursor = new Cursor([NSCursor resizeUpDownCursor]);
     Cursor* dragCopyCursor = new Cursor([NSCursor dragCopyCursor]);
+    Cursor* openHandCursor = new Cursor([NSCursor openHandCursor]);
     Cursor* dragLinkCursor = new Cursor([NSCursor dragLinkCursor]);
     Cursor* pointingHandCursor = new Cursor([NSCursor pointingHandCursor]);
     Cursor* contextualMenuCursor = new Cursor([NSCursor contextualMenuCursor]);
@@ -40,7 +37,7 @@ class CursorFactory : public ComSingleObject<IAvnCursorFactory, &IID_IAvnCursorF
         { CursorUpArrow, resizeUpCursor },
         { CursorBottomSize, resizeDownCursor },
         { CursorDragCopy, dragCopyCursor },
-        { CursorDragMove, dragCopyCursor },
+        { CursorDragMove, openHandCursor },
         { CursorDragLink, dragLinkCursor },
         { CursorHand, pointingHandCursor },
         { CursorHelp, contextualMenuCursor },
@@ -56,14 +53,46 @@ public:
     
     virtual HRESULT GetCursor (AvnStandardCursorType cursorType, IAvnCursor** retOut) override
     {
-        *retOut = s_cursorMap[cursorType];
+        START_COM_CALL;
         
-        if(*retOut != nullptr)
+        @autoreleasepool
         {
-            (*retOut)->AddRef();
-        }
+            *retOut = s_cursorMap[cursorType];
             
-        return S_OK;
+            if(*retOut != nullptr)
+            {
+                (*retOut)->AddRef();
+            }
+                
+            return S_OK;
+        }
+    }
+    
+    virtual HRESULT CreateCustomCursor (void* bitmapData, size_t length, AvnPixelSize hotPixel, IAvnCursor** retOut) override
+    {
+        START_COM_CALL;
+        
+        @autoreleasepool
+        {
+            if(bitmapData == nullptr || retOut == nullptr)
+            {
+                return E_POINTER;
+            }
+            
+            NSData *imageData = [NSData dataWithBytes:bitmapData length:length];
+            NSImage *image = [[NSImage alloc] initWithData:imageData];
+            
+            
+            NSPoint hotSpot;
+            hotSpot.x = hotPixel.Width;
+            hotSpot.y = hotPixel.Height;
+            
+            *retOut = new Cursor([[NSCursor new] initWithImage: image hotSpot: hotSpot]);
+            
+            (*retOut)->AddRef();
+            
+            return S_OK;
+        }
     }
 };
 

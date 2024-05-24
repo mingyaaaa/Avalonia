@@ -1,11 +1,6 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Animation;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
-using Avalonia.Controls.Utils;
-using Avalonia.Input;
 
 namespace Avalonia.Controls
 {
@@ -15,23 +10,19 @@ namespace Avalonia.Controls
     public class Carousel : SelectingItemsControl
     {
         /// <summary>
-        /// Defines the <see cref="IsVirtualized"/> property.
-        /// </summary>
-        public static readonly StyledProperty<bool> IsVirtualizedProperty =
-            AvaloniaProperty.Register<Carousel, bool>(nameof(IsVirtualized), true);
-
-        /// <summary>
         /// Defines the <see cref="PageTransition"/> property.
         /// </summary>
-        public static readonly StyledProperty<IPageTransition> PageTransitionProperty =
-            AvaloniaProperty.Register<Carousel, IPageTransition>(nameof(PageTransition));
+        public static readonly StyledProperty<IPageTransition?> PageTransitionProperty =
+            AvaloniaProperty.Register<Carousel, IPageTransition?>(nameof(PageTransition));
 
         /// <summary>
         /// The default value of <see cref="ItemsControl.ItemsPanelProperty"/> for 
         /// <see cref="Carousel"/>.
         /// </summary>
-        private static readonly ITemplate<IPanel> PanelTemplate =
-            new FuncTemplate<IPanel>(() => new Panel());
+        private static readonly FuncTemplate<Panel?> DefaultPanel =
+            new(() => new VirtualizingCarouselPanel());
+
+        private IScrollable? _scroller;
 
         /// <summary>
         /// Initializes static members of the <see cref="Carousel"/> class.
@@ -39,28 +30,16 @@ namespace Avalonia.Controls
         static Carousel()
         {
             SelectionModeProperty.OverrideDefaultValue<Carousel>(SelectionMode.AlwaysSelected);
-            ItemsPanelProperty.OverrideDefaultValue<Carousel>(PanelTemplate);
-        }
-        
-        /// <summary>
-        /// Gets or sets a value indicating whether the items in the carousel are virtualized.
-        /// </summary>
-        /// <remarks>
-        /// When the carousel is virtualized, only the active page is held in memory.
-        /// </remarks>
-        public bool IsVirtualized
-        {
-            get { return GetValue(IsVirtualizedProperty); }
-            set { SetValue(IsVirtualizedProperty, value); }
+            ItemsPanelProperty.OverrideDefaultValue<Carousel>(DefaultPanel);
         }
 
         /// <summary>
         /// Gets or sets the transition to use when moving between pages.
         /// </summary>
-        public IPageTransition PageTransition
+        public IPageTransition? PageTransition
         {
-            get { return GetValue(PageTransitionProperty); }
-            set { SetValue(PageTransitionProperty, value); }
+            get => GetValue(PageTransitionProperty);
+            set => SetValue(PageTransitionProperty, value);
         }
 
         /// <summary>
@@ -68,7 +47,7 @@ namespace Avalonia.Controls
         /// </summary>
         public void Next()
         {
-            if (SelectedIndex < Items.Count() - 1)
+            if (SelectedIndex < ItemCount - 1)
             {
                 ++SelectedIndex;
             }
@@ -85,16 +64,31 @@ namespace Avalonia.Controls
             }
         }
 
-        /// <inheritdoc/>
-        protected override void OnKeyDown(KeyEventArgs e)
+        protected override Size ArrangeOverride(Size finalSize)
         {
-            // Ignore key presses.
+            var result = base.ArrangeOverride(finalSize);
+
+            if (_scroller is not null)
+                _scroller.Offset = new(SelectedIndex, 0);
+
+            return result;
         }
 
-        /// <inheritdoc/>
-        protected override void OnPointerPressed(PointerPressedEventArgs e)
+        protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
         {
-            // Ignore pointer presses.
+            base.OnApplyTemplate(e);
+            _scroller = e.NameScope.Find<IScrollable>("PART_ScrollViewer");
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == SelectedIndexProperty && _scroller is not null)
+            {
+                var value = change.GetNewValue<int>();
+                _scroller.Offset = new(value, 0);
+            }
         }
     }
 }

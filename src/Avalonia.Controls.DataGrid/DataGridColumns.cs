@@ -5,12 +5,14 @@
 
 using Avalonia.Controls.Utils;
 using Avalonia.Data;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Utilities;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Reflection;
+using Avalonia.Layout;
 
 namespace Avalonia.Controls
 {
@@ -33,6 +35,11 @@ namespace Avalonia.Controls
             ColumnReordering?.Invoke(this, e);
         }
 
+        protected internal virtual void OnColumnSorting(DataGridColumnEventArgs e)
+        {
+            Sorting?.Invoke(this, e);
+        }
+
         /// <summary>
         /// Adjusts the widths of all columns with DisplayIndex >= displayIndex such that the total
         /// width is adjusted by the given amount, if possible.  If the total desired adjustment amount
@@ -44,7 +51,7 @@ namespace Avalonia.Controls
         /// <returns>The remaining amount of adjustment.</returns>
         internal double AdjustColumnWidths(int displayIndex, double amount, bool userInitiated)
         {
-            if (!DoubleUtil.IsZero(amount))
+            if (!MathUtilities.IsZero(amount))
             {
                 if (amount < 0)
                 {
@@ -84,7 +91,10 @@ namespace Avalonia.Controls
                 // this column is newly added, we'll just set its display value directly.
                 if (UsesStarSizing && column.IsInitialDesiredWidthDetermined)
                 {
-                    column.Resize(column.Width.Value, column.Width.UnitType, desiredWidth, desiredWidth, false);
+                    var oldWidth = column.Width;
+                    column.Resize(oldWidth,
+                        new(column.Width.Value, column.Width.UnitType, desiredWidth, desiredWidth),
+                        false);
                 }
                 else
                 {
@@ -135,10 +145,10 @@ namespace Avalonia.Controls
         {
             Debug.Assert(dataGridColumn != null);
 
-            if (dataGridColumn is DataGridBoundColumn dataGridBoundColumn && 
-                dataGridBoundColumn.Binding is Binding binding)
+            if (dataGridColumn is DataGridBoundColumn dataGridBoundColumn &&
+                dataGridBoundColumn.Binding is BindingBase binding)
             {
-                string path = binding.Path;
+                var path = (binding as Binding)?.Path ?? (binding as CompiledBindingExtension)?.Path.ToString();
 
                 if (string.IsNullOrWhiteSpace(path))
                 {
@@ -352,6 +362,7 @@ namespace Avalonia.Controls
 
             if (column.IsVisible && oldValue != column.ActualMaxWidth)
             {
+                DataGridLength oldWitdh = new(oldValue, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue);
                 if (column.ActualMaxWidth < column.Width.DisplayValue)
                 {
                     // If the maximum width has caused the column to decrease in size, try first to resize
@@ -364,7 +375,9 @@ namespace Avalonia.Controls
                 {
                     // If the column was previously limited by its maximum value but has more room now, 
                     // attempt to resize the column to its desired width.
-                    column.Resize(column.Width.Value, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue, false);
+                    column.Resize(oldWitdh,
+                        new (column.Width.Value, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue),
+                        false);
                 }
                 OnColumnWidthChanged(column);
             }
@@ -381,6 +394,7 @@ namespace Avalonia.Controls
 
             if (column.IsVisible && oldValue != column.ActualMinWidth)
             {
+                DataGridLength oldWitdh = new(oldValue, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue);
                 if (column.ActualMinWidth > column.Width.DisplayValue)
                 {
                     // If the minimum width has caused the column to increase in size, try first to resize
@@ -393,7 +407,9 @@ namespace Avalonia.Controls
                 {
                     // If the column was previously limited by its minimum value but but can be smaller now, 
                     // attempt to resize the column to its desired width.
-                    column.Resize(column.Width.Value, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue, false);
+                    column.Resize(oldWitdh,
+                       new(column.Width.Value, column.Width.UnitType, column.Width.DesiredValue, column.Width.DesiredValue),
+                       false);
                 }
                 OnColumnWidthChanged(column);
             }
@@ -438,12 +454,11 @@ namespace Avalonia.Controls
 
             // We need to explicitly collapse the cells of the invisible column because layout only goes through
             // visible ones
-            if (!updatedColumn.IsVisible)
+            ColumnHeaders?.InvalidateChildIndex();
+            foreach (var row in GetAllRows())
             {
-                foreach (DataGridRow row in GetAllRows())
-                {
-                    row.Cells[updatedColumn.Index].IsVisible = false;
-                }
+                row.Cells[updatedColumn.Index].IsVisible = updatedColumn.IsVisible;
+                row.InvalidateCellsIndex();
             }
         }
 
@@ -484,7 +499,7 @@ namespace Avalonia.Controls
         {
             DataGridFillerColumn fillerColumn = ColumnsInternal.FillerColumn;
             double totalColumnsWidth = ColumnsInternal.VisibleEdgedColumnsWidth;
-            if (finalWidth > totalColumnsWidth)
+            if (finalWidth - totalColumnsWidth > LayoutHelper.LayoutEpsilon)
             {
                 fillerColumn.FillerWidth = finalWidth - totalColumnsWidth;
             }
@@ -777,7 +792,7 @@ namespace Avalonia.Controls
         private double AdjustStarColumnWidths(int displayIndex, double adjustment, bool userInitiated)
         {
             double remainingAdjustment = adjustment;
-            if (DoubleUtil.IsZero(remainingAdjustment))
+            if (MathUtilities.IsZero(remainingAdjustment))
             {
                 return remainingAdjustment;
             }
@@ -843,7 +858,7 @@ namespace Avalonia.Controls
         /// <returns>The remaining amount of adjustment.</returns>
         private double AdjustStarColumnWidths(int displayIndex, double remainingAdjustment, bool userInitiated, Func<DataGridColumn, double> targetWidth)
         {
-            if (DoubleUtil.IsZero(remainingAdjustment))
+            if (MathUtilities.IsZero(remainingAdjustment))
             {
                 return remainingAdjustment;
             }
@@ -966,6 +981,12 @@ namespace Avalonia.Controls
                         {
                             cx += _negHorizontalOffset;
                             _horizontalOffset -= _negHorizontalOffset;
+                            if (_horizontalOffset < LayoutHelper.LayoutEpsilon)
+                            {
+                                // Snap to zero to avoid trying to partially scroll in first scrolled off column below
+                                _horizontalOffset = 0;
+                            }
+
                             _negHorizontalOffset = 0;
                         }
                         else
@@ -974,6 +995,11 @@ namespace Avalonia.Controls
                             _negHorizontalOffset -= displayWidth - cx;
                             cx = displayWidth;
                         }
+
+                        // Make sure the HorizontalAdjustment is not greater than the new HorizontalOffset
+                        // since it would cause an assertion failure in DataGridCellsPresenter.ShouldDisplayCell
+                        // called by DataGridCellsPresenter.MeasureOverride.
+                        HorizontalAdjustment = Math.Min(HorizontalAdjustment, _horizontalOffset);
                     }
                     // second try to scroll entire columns
                     if (cx < displayWidth && _horizontalOffset > 0)
@@ -1244,7 +1270,7 @@ namespace Avalonia.Controls
             Debug.Assert(amount < 0);
             Debug.Assert(column.Width.UnitType != DataGridLengthUnitType.Star);
 
-            if (DoubleUtil.GreaterThanOrClose(targetWidth, column.Width.DisplayValue))
+            if (MathUtilities.GreaterThanOrClose(targetWidth, column.Width.DisplayValue))
             {
                 return amount;
             }
@@ -1271,7 +1297,7 @@ namespace Avalonia.Controls
         /// <returns>The remaining amount of adjustment.</returns>
         private double DecreaseNonStarColumnWidths(int displayIndex, Func<DataGridColumn, double> targetWidth, double amount, bool reverse, bool affectNewColumns)
         {
-            if (DoubleUtil.GreaterThanOrClose(amount, 0))
+            if (MathUtilities.GreaterThanOrClose(amount, 0))
             {
                 return amount;
             }
@@ -1285,7 +1311,7 @@ namespace Avalonia.Controls
                     (affectNewColumns || column.IsInitialDesiredWidthDetermined)))
             {
                 amount = DecreaseNonStarColumnWidth(column, Math.Max(column.ActualMinWidth, targetWidth(column)), amount);
-                if (DoubleUtil.IsZero(amount))
+                if (MathUtilities.IsZero(amount))
                 {
                     break;
                 }
@@ -1392,7 +1418,7 @@ namespace Avalonia.Controls
         /// <returns>The remaining amount of adjustment.</returns>
         private double IncreaseNonStarColumnWidths(int displayIndex, Func<DataGridColumn, double> targetWidth, double amount, bool reverse, bool affectNewColumns)
         {
-            if (DoubleUtil.LessThanOrClose(amount, 0))
+            if (MathUtilities.LessThanOrClose(amount, 0))
             {
                 return amount;
             }
@@ -1406,7 +1432,7 @@ namespace Avalonia.Controls
                     (affectNewColumns || column.IsInitialDesiredWidthDetermined)))
             {
                 amount = IncreaseNonStarColumnWidth(column, Math.Min(column.ActualMaxWidth, targetWidth(column)), amount);
-                if (DoubleUtil.IsZero(amount))
+                if (MathUtilities.IsZero(amount))
                 {
                     break;
                 }
@@ -1432,7 +1458,7 @@ namespace Avalonia.Controls
 
             DataGridCell dataGridCell = dataGridRow.Cells[dataGridColumn.Index];
             Debug.Assert(dataGridCell != null);
-            if (dataGridCell.Content is IControl element)
+            if (dataGridCell.Content is Control element)
             {
                 dataGridColumn.RefreshCellContent(element, propertyName);
             }

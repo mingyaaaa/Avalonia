@@ -28,6 +28,11 @@ namespace Avalonia.Controls.Primitives
         private int _rows;
         private int _columns;
 
+        static UniformGrid()
+        {
+            AffectsMeasure<UniformGrid>(RowsProperty, ColumnsProperty, FirstColumnProperty);
+        }
+
         /// <summary>
         /// Specifies the row count. If set to 0, row count will be calculated automatically.
         /// </summary>
@@ -118,7 +123,7 @@ namespace Avalonia.Controls.Primitives
 
             if (FirstColumn >= Columns)
             {
-                FirstColumn = 0;
+                SetCurrentValue(FirstColumnProperty, 0);
             }
 
             var itemCount = FirstColumn;

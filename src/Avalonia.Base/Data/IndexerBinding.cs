@@ -1,14 +1,13 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
+﻿using System;
+using Avalonia.Data.Core;
+using Avalonia.Diagnostics;
 
 namespace Avalonia.Data
 {
-    public class IndexerBinding : IBinding
+    internal class IndexerBinding : IBinding2
     {
         public IndexerBinding(
-            IAvaloniaObject source,
+            AvaloniaObject source,
             AvaloniaProperty property,
             BindingMode mode)
         {
@@ -17,33 +16,24 @@ namespace Avalonia.Data
             Mode = mode;
         }
 
-        private IAvaloniaObject Source { get; }
+        private AvaloniaObject Source { get; }
         public AvaloniaProperty Property { get; }
         private BindingMode Mode { get; }
 
-        public InstancedBinding Initiate(
-            IAvaloniaObject target,
-            AvaloniaProperty targetProperty,
-            object anchor = null,
+        [Obsolete(ObsoletionMessages.MayBeRemovedInAvalonia12)]
+        public InstancedBinding? Initiate(
+            AvaloniaObject target,
+            AvaloniaProperty? targetProperty,
+            object? anchor = null,
             bool enableDataValidation = false)
         {
-            var mode = Mode == BindingMode.Default ?
-                targetProperty.GetMetadata(target.GetType()).DefaultBindingMode :
-                Mode;
+            var expression = new IndexerBindingExpression(Source, Property, target, targetProperty, Mode);
+            return new InstancedBinding(expression, Mode, BindingPriority.LocalValue);
+        }
 
-            switch (mode)
-            {
-                case BindingMode.OneTime:
-                    return InstancedBinding.OneTime(Source.GetObservable(Property));
-                case BindingMode.OneWay:
-                    return InstancedBinding.OneWay(Source.GetObservable(Property));
-                case BindingMode.OneWayToSource:
-                    return InstancedBinding.OneWayToSource(Source.GetSubject(Property));
-                case BindingMode.TwoWay:
-                    return InstancedBinding.TwoWay(Source.GetSubject(Property));
-                default:
-                    throw new NotSupportedException("Unsupported BindingMode.");
-            }
+        BindingExpressionBase IBinding2.Instance(AvaloniaObject target, AvaloniaProperty targetProperty, object? anchor)
+        {
+            return new IndexerBindingExpression(Source, Property, target, targetProperty, Mode);
         }
     }
 }

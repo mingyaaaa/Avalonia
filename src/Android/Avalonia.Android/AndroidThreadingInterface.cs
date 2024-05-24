@@ -1,70 +1,58 @@
 using System;
-using System.Reactive.Disposables;
 using System.Threading;
+
 using Android.OS;
+
 using Avalonia.Platform;
+using Avalonia.Reactive;
 using Avalonia.Threading;
+
+using App = Android.App.Application;
 
 namespace Avalonia.Android
 {
-    class AndroidThreadingInterface : IPlatformThreadingInterface
+    internal sealed class AndroidThreadingInterface : IPlatformThreadingInterface
     {
         private Handler _handler;
+        private static Thread? s_uiThread;
 
         public AndroidThreadingInterface()
         {
-            _handler = new Handler(global::Android.App.Application.Context.MainLooper);
-        }
-
-        public void RunLoop(CancellationToken cancellationToken)
-        {
-            return;
+            _handler = new Handler(App.Context.MainLooper
+                ?? throw new InvalidOperationException("Application.Context.MainLooper was not expected to be null."));
         }
 
         public IDisposable StartTimer(DispatcherPriority priority, TimeSpan interval, Action tick)
         {
             if (interval.TotalMilliseconds < 10)
                 interval = TimeSpan.FromMilliseconds(10);
-            object l = new object();
+
             var stopped = false;
-            Timer timer = null;
-            var scheduled = false;
+            Timer? timer = null;
             timer = new Timer(_ =>
             {
-                lock (l)
+                if (stopped)
+                    return;
+
+                EnsureInvokeOnMainThread(() =>
                 {
-                    if (stopped)
+                    try
                     {
-                        timer.Dispose();
-                        return;
+                        tick();
                     }
-                    if (scheduled)
-                        return;
-                    scheduled = true;
-                    EnsureInvokeOnMainThread(() =>
+                    finally
                     {
-                        try
-                        {
-                            tick();
-                        }
-                        finally
-                        {
-                            lock (l)
-                            {
-                                scheduled = false;
-                            }
-                        }
-                    });
-                }
-            }, null, TimeSpan.Zero, interval);
-            
+                        if (!stopped)
+                            timer!.Change(interval, Timeout.InfiniteTimeSpan);
+                    }
+                });
+            },
+            null, interval, Timeout.InfiniteTimeSpan);
+
             return Disposable.Create(() =>
             {
-                lock (l)
-                {
-                    stopped = true;
-                    timer.Dispose();
-                }
+                stopped = true;
+                timer.Dispose();
             });
         }
 
@@ -75,7 +63,25 @@ namespace Avalonia.Android
             EnsureInvokeOnMainThread(() => Signaled?.Invoke(null));
         }
 
-        public bool CurrentThreadIsLoopThread => Looper.MainLooper.Thread.Equals(Java.Lang.Thread.CurrentThread());
-        public event Action<DispatcherPriority?> Signaled;
+        public bool CurrentThreadIsLoopThread
+        {
+            get
+            {
+                if (s_uiThread != null)
+                    return s_uiThread == Thread.CurrentThread;
+
+                var isOnMainThread = OperatingSystem.IsAndroidVersionAtLeast(23)
+                    ? Looper.MainLooper?.IsCurrentThread
+                    : Looper.MainLooper?.Thread.Equals(Java.Lang.Thread.CurrentThread());
+                if (isOnMainThread == true)
+                {
+                    s_uiThread = Thread.CurrentThread;
+                    return true;
+                }
+
+                return false;
+            }
+        }
+        public event Action<DispatcherPriority?>? Signaled;
     }
 }

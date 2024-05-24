@@ -10,7 +10,7 @@ namespace Avalonia.Android.Platform.SkiaPlatform
     {
         private IntPtr _window;
 
-        public AndroidFramebuffer(Surface surface)
+        public AndroidFramebuffer(Surface surface, double scaling)
         {
             if(surface == null)
                 throw new ArgumentNullException(nameof(surface));
@@ -31,6 +31,8 @@ namespace Avalonia.Android.Platform.SkiaPlatform
 
             RowBytes = buffer.stride * (Format == PixelFormat.Rgb565 ? 2 : 4);
             Address = buffer.bits;
+
+            Dpi = new Vector(96, 96) * scaling;
         }
 
         public void Dispose()
@@ -44,7 +46,7 @@ namespace Avalonia.Android.Platform.SkiaPlatform
         public IntPtr Address { get; set; }
         public PixelSize Size { get; }
         public int RowBytes { get; }
-        public Vector Dpi { get; } = new Vector(96, 96);
+        public Vector Dpi { get; }
         public PixelFormat Format { get; }
 
         [DllImport("android")]
@@ -94,12 +96,14 @@ namespace Avalonia.Android.Platform.SkiaPlatform
             public IntPtr bits;
 
             // Do not touch.
+#pragma warning disable CA1823 // Avoid unused private fields
             uint reserved1;
             uint reserved2;
             uint reserved3;
             uint reserved4;
             uint reserved5;
             uint reserved6;
+#pragma warning restore CA1823 // Avoid unused private fields
         }
     }
 }

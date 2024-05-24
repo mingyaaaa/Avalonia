@@ -1,24 +1,91 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using Avalonia.Automation.Peers;
 using System.Linq;
-using System.Reactive.Linq;
-using Avalonia.Controls.Generators;
+using Avalonia.Controls.Diagnostics;
 using Avalonia.Controls.Platform;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Templates;
+using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
-using Avalonia.LogicalTree;
+using Avalonia.Interactivity;
+using Avalonia.Styling;
+using Avalonia.Automation;
+using Avalonia.Reactive;
 
 namespace Avalonia.Controls
 {
     /// <summary>
     /// A control context menu.
     /// </summary>
-    public class ContextMenu : MenuBase
+    public class ContextMenu : MenuBase, ISetterValue, IPopupHostProvider
     {
-        private static readonly ITemplate<IPanel> DefaultPanel =
-            new FuncTemplate<IPanel>(() => new StackPanel { Orientation = Orientation.Vertical });
-        private Popup _popup;
+        /// <summary>
+        /// Defines the <see cref="HorizontalOffset"/> property.
+        /// </summary>
+        public static readonly StyledProperty<double> HorizontalOffsetProperty =
+            Popup.HorizontalOffsetProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="VerticalOffset"/> property.
+        /// </summary>
+        public static readonly StyledProperty<double> VerticalOffsetProperty =
+            Popup.VerticalOffsetProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="PlacementAnchor"/> property.
+        /// </summary>
+        public static readonly StyledProperty<PopupAnchor> PlacementAnchorProperty =
+            Popup.PlacementAnchorProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="PlacementConstraintAdjustment"/> property.
+        /// </summary>
+        public static readonly StyledProperty<PopupPositionerConstraintAdjustment> PlacementConstraintAdjustmentProperty =
+            Popup.PlacementConstraintAdjustmentProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="PlacementGravity"/> property.
+        /// </summary>
+        public static readonly StyledProperty<PopupGravity> PlacementGravityProperty =
+            Popup.PlacementGravityProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="Placement"/> property.
+        /// </summary>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("AvaloniaProperty", "AVP1013",
+            Justification = "We keep PlacementModeProperty for backward compatibility.")]
+        public static readonly StyledProperty<PlacementMode> PlacementProperty =
+            Popup.PlacementProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="PlacementMode"/> property.
+        /// </summary>
+        [Obsolete("Use the Placement property instead."), EditorBrowsable(EditorBrowsableState.Never)]
+        public static readonly StyledProperty<PlacementMode> PlacementModeProperty = PlacementProperty;
+
+        /// <summary>
+        /// Defines the <see cref="PlacementRect"/> property.
+        /// </summary>
+        public static readonly StyledProperty<Rect?> PlacementRectProperty =
+            Popup.PlacementRectProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="WindowManagerAddShadowHint"/> property.
+        /// </summary>
+        public static readonly StyledProperty<bool> WindowManagerAddShadowHintProperty  =
+            Popup.WindowManagerAddShadowHintProperty.AddOwner<ContextMenu>();
+
+        /// <summary>
+        /// Defines the <see cref="PlacementTarget"/> property.
+        /// </summary>
+        public static readonly StyledProperty<Control?> PlacementTargetProperty =
+            Popup.PlacementTargetProperty.AddOwner<ContextMenu>();
+
+        private Popup? _popup;
+        private List<Control>? _attachedControls;
+        private IInputElement? _previousFocus;
+        private Action<IPopupHost?>? _popupHostChangedHandler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ContextMenu"/> class.
@@ -42,8 +109,80 @@ namespace Avalonia.Controls
         /// </summary>
         static ContextMenu()
         {
-            ItemsPanelProperty.OverrideDefaultValue(typeof(ContextMenu), DefaultPanel);
+            PlacementProperty.OverrideDefaultValue<ContextMenu>(PlacementMode.Pointer);
             ContextMenuProperty.Changed.Subscribe(ContextMenuChanged);
+            AutomationProperties.AccessibilityViewProperty.OverrideDefaultValue<ContextMenu>(AccessibilityView.Control);
+            AutomationProperties.ControlTypeOverrideProperty.OverrideDefaultValue<ContextMenu>(AutomationControlType.Menu);
+        }
+
+        /// <inheritdoc cref="Popup.HorizontalOffset"/>
+        public double HorizontalOffset
+        {
+            get => GetValue(HorizontalOffsetProperty);
+            set => SetValue(HorizontalOffsetProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.VerticalOffset"/>
+        public double VerticalOffset
+        {
+            get => GetValue(VerticalOffsetProperty);
+            set => SetValue(VerticalOffsetProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.PlacementAnchor"/>
+        public PopupAnchor PlacementAnchor
+        {
+            get => GetValue(PlacementAnchorProperty);
+            set => SetValue(PlacementAnchorProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.PlacementConstraintAdjustment"/>
+        public PopupPositionerConstraintAdjustment PlacementConstraintAdjustment
+        {
+            get => GetValue(PlacementConstraintAdjustmentProperty);
+            set => SetValue(PlacementConstraintAdjustmentProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.PlacementGravity"/>
+        public PopupGravity PlacementGravity
+        {
+            get => GetValue(PlacementGravityProperty);
+            set => SetValue(PlacementGravityProperty, value);
+        }
+
+        /// <inheritdoc cref="Placement"/>
+        [Obsolete("Use the Placement property instead."), EditorBrowsable(EditorBrowsableState.Never)]
+        public PlacementMode PlacementMode
+        {
+            get => GetValue(PlacementProperty);
+            set => SetValue(PlacementProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.Placement"/>
+        public PlacementMode Placement
+        {
+            get => GetValue(PlacementProperty);
+            set => SetValue(PlacementProperty, value);
+        }
+
+        public bool WindowManagerAddShadowHint
+        {
+            get => GetValue(WindowManagerAddShadowHintProperty);
+            set => SetValue(WindowManagerAddShadowHintProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.PlacementRect"/>
+        public Rect? PlacementRect
+        {
+            get => GetValue(PlacementRectProperty);
+            set => SetValue(PlacementRectProperty, value);
+        }
+
+        /// <inheritdoc cref="Popup.PlacementTarget"/>
+        public Control? PlacementTarget
+        {
+            get => GetValue(PlacementTargetProperty);
+            set => SetValue(PlacementTargetProperty, value);
         }
 
         /// <summary>
@@ -51,14 +190,14 @@ namespace Avalonia.Controls
         /// <see cref="P:Avalonia.Controls.ContextMenu.IsOpen" />
         /// property is changing from false to true.
         /// </summary>
-        public event CancelEventHandler ContextMenuOpening;
+        public event CancelEventHandler? Opening;
 
         /// <summary>
         /// Occurs when the value of the
         /// <see cref="P:Avalonia.Controls.ContextMenu.IsOpen" />
         /// property is changing from true to false.
         /// </summary>
-        public event CancelEventHandler ContextMenuClosing;
+        public event CancelEventHandler? Closing;
 
         /// <summary>
         /// Called when the <see cref="Control.ContextMenu"/> property changes on a control.
@@ -68,14 +207,35 @@ namespace Avalonia.Controls
         {
             var control = (Control)e.Sender;
 
-            if (e.OldValue != null)
+            if (e.OldValue is ContextMenu oldMenu)
             {
-                control.PointerReleased -= ControlPointerReleased;
+                control.ContextRequested -= ControlContextRequested;
+                control.AttachedToVisualTree -= ControlOnAttachedToVisualTree;
+                control.DetachedFromVisualTree -= ControlDetachedFromVisualTree;
+                oldMenu._attachedControls?.Remove(control);
+                ((ISetLogicalParent?)oldMenu._popup)?.SetParent(null);
             }
 
-            if (e.NewValue != null)
+            if (e.NewValue is ContextMenu)
             {
-                control.PointerReleased += ControlPointerReleased;
+                control.ContextRequested += ControlContextRequested;
+                control.AttachedToVisualTree += ControlOnAttachedToVisualTree;
+                control.DetachedFromVisualTree += ControlDetachedFromVisualTree;
+            }
+            
+            if (control.IsAttachedToVisualTree)
+            {
+                AttachControlToContextMenu(control); 
+            }
+        }
+
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == WindowManagerAddShadowHintProperty && _popup != null)
+            {
+                _popup.WindowManagerAddShadowHint = change.GetNewValue<bool>();
             }
         }
 
@@ -88,26 +248,24 @@ namespace Avalonia.Controls
         /// Opens a context menu on the specified control.
         /// </summary>
         /// <param name="control">The control.</param>
-        public void Open(Control control)
+        public void Open(Control? control)
         {
-            if (_popup == null)
+            if (control is null && (_attachedControls is null || _attachedControls.Count == 0))
             {
-                _popup = new Popup()
-                {
-                    PlacementMode = PlacementMode.Pointer,
-                    PlacementTarget = control,
-                    StaysOpen = false,
-                    ObeyScreenEdges = true
-                };
-
-                _popup.Opened += PopupOpened;
-                _popup.Closed += PopupClosed;
+                throw new ArgumentNullException(nameof(control));
             }
 
-            ((ISetLogicalParent)_popup).SetParent(control);
-            _popup.Child = this;
-            _popup.IsOpen = true;
-            IsOpen = true;
+            if (control is object &&
+                _attachedControls is object &&
+                !_attachedControls.Contains(control))
+            {
+                throw new ArgumentException(
+                    "Cannot show ContentMenu on a different control to the one it is attached to.",
+                    nameof(control));
+            }
+
+            control ??= _attachedControls![0];
+            Open(control, PlacementTarget ?? control, Placement);
         }
 
         /// <summary>
@@ -115,76 +273,195 @@ namespace Avalonia.Controls
         /// </summary>
         public override void Close()
         {
+            if (!IsOpen)
+            {
+                return;
+            }
+
             if (_popup != null && _popup.IsVisible)
             {
                 _popup.IsOpen = false;
             }
+        }
+
+        void ISetterValue.Initialize(SetterBase setter)
+        {
+            // ContextMenu can be assigned to the ContextMenu property in a setter. This overrides
+            // the behavior defined in Control which requires controls to be wrapped in a <template>.
+            if (!(setter is Setter s && s.Property == ContextMenuProperty))
+            {
+                throw new InvalidOperationException(
+                    "Cannot use a control as a Setter value. Wrap the control in a <Template>.");
+            }
+        }
+
+        IPopupHost? IPopupHostProvider.PopupHost => _popup?.Host;
+
+        event Action<IPopupHost?>? IPopupHostProvider.PopupHostChanged 
+        { 
+            add => _popupHostChangedHandler += value; 
+            remove => _popupHostChangedHandler -= value;
+        }
+
+        private void Open(Control control, Control placementTarget, PlacementMode placement)
+        {
+            if (IsOpen)
+            {
+                return;
+            }
+
+            if (_popup == null)
+            {
+                _popup = new Popup
+                {
+                    IsLightDismissEnabled = true,
+                    OverlayDismissEventPassThrough = true,
+                };
+
+                _popup.Opened += PopupOpened;
+                _popup.Closed += PopupClosed;
+                _popup.Closing += PopupClosing;
+                _popup.KeyUp += PopupKeyUp;
+            }
+
+            _popup.SetPopupParent(control);
+
+            _popup.Placement = placement;
+
+            //Position of the line below is really important. 
+            //All styles are being applied only when control has logical parent.
+            //Line below will add ContextMenu as child to the Popup and this will trigger styles and they would be applied.
+            //If you will move line below somewhere else it may cause that ContextMenu will behave differently from what you are expecting.
+            _popup.Child = this;
+            _popup.PlacementTarget = placementTarget;
+            _popup.HorizontalOffset = HorizontalOffset;
+            _popup.VerticalOffset = VerticalOffset;
+            _popup.PlacementAnchor = PlacementAnchor;
+            _popup.PlacementConstraintAdjustment = PlacementConstraintAdjustment;
+            _popup.PlacementGravity = PlacementGravity;
+            _popup.PlacementRect = PlacementRect;
+            _popup.WindowManagerAddShadowHint = WindowManagerAddShadowHint;
+            IsOpen = true;
+            _popup.IsOpen = true;
+
+            RaiseEvent(new RoutedEventArgs
+            {
+                RoutedEvent = OpenedEvent,
+                Source = this,
+            });
+        }
+
+        private void PopupOpened(object? sender, EventArgs e)
+        {
+            _previousFocus = FocusManager.GetFocusManager(this)?.GetFocusedElement();
+            Focus();
+
+            _popupHostChangedHandler?.Invoke(_popup!.Host);
+        }
+
+        private void PopupClosing(object? sender, CancelEventArgs e)
+        {
+            e.Cancel = CancelClosing();
+        }
+
+        private void PopupClosed(object? sender, EventArgs e)
+        {
+            foreach (var i in LogicalChildren)
+            {
+                if (i is MenuItem menuItem)
+                {
+                    menuItem.IsSubMenuOpen = false;
+                }
+            }
 
             SelectedIndex = -1;
             IsOpen = false;
-        }
 
-        protected override IItemContainerGenerator CreateItemContainerGenerator()
-        {
-            return new MenuItemContainerGenerator(this);
-        }
-
-        private void PopupOpened(object sender, EventArgs e)
-        {
-            Focus();
-        }
-
-        private void PopupClosed(object sender, EventArgs e)
-        {
-            var contextMenu = (sender as Popup)?.Child as ContextMenu;
-
-            if (contextMenu != null)
+            if (_attachedControls is null || _attachedControls.Count == 0)
             {
-                foreach (var i in contextMenu.GetLogicalChildren().OfType<MenuItem>())
+                _popup!.SetPopupParent(null);
+            }
+
+            RaiseEvent(new RoutedEventArgs
+            {
+                RoutedEvent = ClosedEvent,
+                Source = this,
+            });
+            
+            _popupHostChangedHandler?.Invoke(null);
+        }
+
+        private void PopupKeyUp(object? sender, KeyEventArgs e)
+        {
+            if (IsOpen)
+            {
+                var keymap = Application.Current!.PlatformSettings!.HotkeyConfiguration;
+
+                if (keymap?.OpenContextMenu.Any(k => k.Matches(e)) == true
+                    && !CancelClosing())
                 {
-                    i.IsSubMenuOpen = false;
+                    Close();
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private static void ControlContextRequested(object? sender, ContextRequestedEventArgs e)
+        {
+            if (sender is Control control
+                && control.ContextMenu is ContextMenu contextMenu
+                && !e.Handled
+                && !contextMenu.CancelOpening())
+            {
+                var requestedByPointer = e.TryGetPosition(null, out _);
+                contextMenu.Open(
+                    control, 
+                    e.Source as Control ?? control, 
+                    requestedByPointer ? contextMenu.Placement : PlacementMode.Bottom);
+                e.Handled = true;
+            }
+        }
+        
+        
+        private static void ControlOnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+        {
+            AttachControlToContextMenu(sender);
+        }
+
+        private static void AttachControlToContextMenu(object? sender)
+        {
+            if (sender is Control { ContextMenu: { } contextMenu } control)
+            {
+                contextMenu._attachedControls ??= new List<Control>();
+                contextMenu._attachedControls.Add(control);
+            }
+        }
+
+        private static void ControlDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+        {
+            if (sender is Control { ContextMenu: { } contextMenu } control)
+            {
+                if (contextMenu._popup?.Parent == control)
+                {
+                    ((ISetLogicalParent)contextMenu._popup).SetParent(null);
                 }
 
-                contextMenu.IsOpen = false;
-                contextMenu.SelectedIndex = -1;
-            }
-        }
-
-        private static void ControlPointerReleased(object sender, PointerReleasedEventArgs e)
-        {
-            var control = (Control)sender;
-            var contextMenu = control.ContextMenu;
-
-            if (control.ContextMenu.IsOpen)
-            {
-                if (contextMenu.CancelClosing())
-                    return;
-
-                control.ContextMenu.Close();
-                e.Handled = true;
-            }
-
-            if (e.MouseButton == MouseButton.Right)
-            {
-                if (contextMenu.CancelOpening())
-                    return;
-
-                contextMenu.Open(control);
-                e.Handled = true;
+                contextMenu.Close();
+                contextMenu._attachedControls?.Remove(control);
             }
         }
 
         private bool CancelClosing()
         {
             var eventArgs = new CancelEventArgs();
-            ContextMenuClosing?.Invoke(this, eventArgs);
+            Closing?.Invoke(this, eventArgs);
             return eventArgs.Cancel;
         }
 
         private bool CancelOpening()
         {
             var eventArgs = new CancelEventArgs();
-            ContextMenuOpening?.Invoke(this, eventArgs);
+            Opening?.Invoke(this, eventArgs);
             return eventArgs.Cancel;
         }
     }

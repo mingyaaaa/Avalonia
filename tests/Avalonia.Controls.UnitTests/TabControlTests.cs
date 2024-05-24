@@ -1,21 +1,33 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Selection;
 using Avalonia.Controls.Templates;
+using Avalonia.Controls.Utils;
+using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.LogicalTree;
+using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.UnitTests;
+using Moq;
 using Xunit;
 
 namespace Avalonia.Controls.UnitTests
 {
     public class TabControlTests
     {
+        static TabControlTests()
+        {
+            RuntimeHelpers.RunClassConstructor(typeof(RelativeSource).TypeHandle);
+        }
+
         [Fact]
         public void First_Tab_Should_Be_Selected_By_Default()
         {
@@ -23,7 +35,7 @@ namespace Avalonia.Controls.UnitTests
             var target = new TabControl
             {
                 Template = TabControlTemplate(),
-                Items = new[]
+                Items =
                 {
                     (selected = new TabItem
                     {
@@ -45,114 +57,200 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
-        public void Logical_Children_Should_Be_TabItems()
+        public void Pre_Selecting_TabItem_Should_Set_SelectedContent_After_It_Was_Added()
         {
-            var items = new[]
-            {
-                new TabItem
-                {
-                    Content = "foo"
-                },
-                new TabItem
-                {
-                    Content = "bar"
-                },
-            };
-
+            const string secondContent = "Second";
             var target = new TabControl
             {
                 Template = TabControlTemplate(),
-                Items = items,
+                Items =
+                {
+                    new TabItem { Header = "First"},
+                    new TabItem { Header = "Second", Content = secondContent, IsSelected = true }
+                },
             };
 
-            Assert.Equal(items, target.GetLogicalChildren());
-            target.ApplyTemplate();
-            Assert.Equal(items, target.GetLogicalChildren());
+            ApplyTemplate(target);
+
+            Assert.Equal(secondContent, target.SelectedContent);
         }
 
         [Fact]
-        public void Removal_Should_Set_Next_Tab()
+        public void Logical_Children_Should_Be_TabItems()
         {
-            var collection = new ObservableCollection<TabItem>()
+            var target = new TabControl
             {
-                new TabItem
+                Template = TabControlTemplate(),
+                Items =
                 {
-                    Name = "first",
-                    Content = "foo",
-                },
-                new TabItem
+                    new TabItem
+                    {
+                        Content = "foo"
+                    },
+                    new TabItem
+                    {
+                        Content = "bar"
+                    },
+                }
+            };
+
+            Assert.Equal(target.Items, target.GetLogicalChildren().ToList());
+            target.ApplyTemplate();
+            Assert.Equal(target.Items, target.GetLogicalChildren().ToList());
+        }
+
+        [Fact]
+        public void Removal_Should_Set_First_Tab()
+        {
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                Items =
                 {
-                    Name = "second",
-                    Content = "bar",
-                },
-                new TabItem
+                    new TabItem
+                    {
+                        Name = "first",
+                        Content = "foo",
+                    },
+                    new TabItem
+                    {
+                        Name = "second",
+                        Content = "bar",
+                    },
+                    new TabItem
+                    {
+                        Name = "3rd",
+                        Content = "barf",
+                    },
+                }
+            };
+
+            Prepare(target);
+            target.SelectedItem = target.Items[1];
+
+            var item = Assert.IsType<TabItem>(target.Items[1]);
+            Assert.Same(item, target.SelectedItem);
+            Assert.Equal(item.Content, target.SelectedContent);
+
+            target.Items.RemoveAt(1);
+
+            item = Assert.IsType<TabItem>(target.Items[0]);
+            Assert.Same(item, target.SelectedItem);
+            Assert.Equal(item.Content, target.SelectedContent);
+        }
+
+        [Fact]
+        public void Removal_Should_Set_New_Item0_When_Item0_Selected()
+        {
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                Items =
                 {
-                    Name = "3rd",
-                    Content = "barf",
-                },
+                    new TabItem
+                    {
+                        Name = "first",
+                        Content = "foo",
+                    },
+                    new TabItem
+                    {
+                        Name = "second",
+                        Content = "bar",
+                    },
+                    new TabItem
+                    {
+                        Name = "3rd",
+                        Content = "barf",
+                    },
+                }
+            };
+
+            Prepare(target);
+            target.SelectedItem = target.Items[0];
+
+            var item = Assert.IsType<TabItem>(target.Items[0]);
+            Assert.Same(item, target.SelectedItem);
+            Assert.Equal(item.Content, target.SelectedContent);
+
+            target.Items.RemoveAt(0);
+
+            item = Assert.IsType<TabItem>(target.Items[0]);
+            Assert.Same(item, target.SelectedItem);
+            Assert.Equal(item.Content, target.SelectedContent);
+        }
+
+        [Fact]
+        public void Removal_Should_Set_New_Item0_When_Item0_Selected_With_DataTemplate()
+        {
+            using var app = UnitTestApplication.Start(TestServices.StyledWindow);
+
+            var collection = new ObservableCollection<Item>()
+            {
+                new Item("first"),
+                new Item("second"),
+                new Item("3rd"),
             };
 
             var target = new TabControl
             {
                 Template = TabControlTemplate(),
-                Items = collection,
+                ItemsSource = collection,
             };
 
-            target.ApplyTemplate();
-            target.SelectedItem = collection[1];
-            collection.RemoveAt(1);
+            Prepare(target);
+            target.SelectedItem = collection[0];
 
-            // compare with former [2] now [1] == "3rd"
-            Assert.Same(collection[1], target.SelectedItem);
+            Assert.Same(collection[0], target.SelectedItem);
+            Assert.Equal(collection[0], target.SelectedContent);
+
+            collection.RemoveAt(0);
+
+            Assert.Same(collection[0], target.SelectedItem);
+            Assert.Equal(collection[0], target.SelectedContent);
         }
-
 
         [Fact]
         public void TabItem_Templates_Should_Be_Set_Before_TabItem_ApplyTemplate()
         {
-            var collection = new[]
+            var template = new FuncControlTemplate<TabItem>((x, __) => new Decorator());
+            TabControl target;
+            var root = new TestRoot
             {
-                new TabItem
+                Styles =
                 {
-                    Name = "first",
-                    Content = "foo",
+                    new Style(x => x.OfType<TabItem>())
+                    {
+                        Setters =
+                        {
+                            new Setter(TemplatedControl.TemplateProperty, template)
+                        }
+                    }
                 },
-                new TabItem
+                Child = (target = new TabControl
                 {
-                    Name = "second",
-                    Content = "bar",
-                },
-                new TabItem
-                {
-                    Name = "3rd",
-                    Content = "barf",
-                },
+                    Template = TabControlTemplate(),
+                    Items =
+                    {
+                        new TabItem
+                        {
+                            Name = "first",
+                            Content = "foo",
+                        },
+                        new TabItem
+                        {
+                            Name = "second",
+                            Content = "bar",
+                        },
+                        new TabItem
+                        {
+                            Name = "3rd",
+                            Content = "barf",
+                        },
+                    },
+                })
             };
 
-            var template = new FuncControlTemplate<TabItem>(x => new Decorator());
-
-            using (UnitTestApplication.Start(TestServices.RealStyler))
-            {
-                var root = new TestRoot
-                {
-                    Styles =
-                    {
-                        new Style(x => x.OfType<TabItem>())
-                        {
-                            Setters = new[]
-                            {
-                                new Setter(TemplatedControl.TemplateProperty, template)
-                            }
-                        }
-                    },
-                    Child = new TabControl
-                    {
-                        Template = TabControlTemplate(),
-                        Items = collection,
-                    }
-                };
-            }
-
+            var collection = target.Items.Cast<TabItem>().ToList();
             Assert.Same(collection[0].Template, template);
             Assert.Same(collection[1].Template, template);
             Assert.Same(collection[2].Template, template);
@@ -176,9 +274,9 @@ namespace Avalonia.Controls.UnitTests
                 DataContext = "Base",
                 DataTemplates =
                 {
-                    new FuncDataTemplate<Item>(x => new Button { Content = x })
+                    new FuncDataTemplate<Item>((x, __) => new Button { Content = x })
                 },
-                Items = items,
+                ItemsSource = items,
             };
 
             ApplyTemplate(target);
@@ -220,21 +318,19 @@ namespace Avalonia.Controls.UnitTests
         [Fact]
         public void Non_IHeadered_Control_Items_Should_Be_Ignored()
         {
-            var items = new[]
-            {
-                new TextBlock { Text = "foo" },
-                new TextBlock { Text = "bar" },
-            };
-
             var target = new TabControl
             {
                 Template = TabControlTemplate(),
-                Items = items,
+                Items =
+                {
+                    new TextBlock { Text = "foo" },
+                    new TextBlock { Text = "bar" },
+                },
             };
 
             ApplyTemplate(target);
 
-            var logicalChildren = target.ItemsPresenterPart.Panel.GetLogicalChildren();
+            var logicalChildren = target.GetLogicalChildren();
 
             var result = logicalChildren
                 .OfType<TabItem>()
@@ -250,7 +346,7 @@ namespace Avalonia.Controls.UnitTests
             TabControl target = new TabControl
             {
                 Template = TabControlTemplate(),
-                Items = new[]
+                Items =
                 {
                     new TabItem { Header = "Foo" },
                     new TabItem { Header = "Foo", Content = new Decorator() },
@@ -273,10 +369,11 @@ namespace Avalonia.Controls.UnitTests
             TabControl target = new TabControl
             {
                 Template = TabControlTemplate(),
-                ContentTemplate = new FuncDataTemplate<string>(x =>
+                ContentTemplate = new FuncDataTemplate<string>((x, _) =>
                     new TextBlock { Tag = "bar", Text = x }),
-                Items = new[] { "Foo" },
+                ItemsSource = new[] { "Foo" },
             };
+            var root = new TestRoot(target);
 
             ApplyTemplate(target);
             target.ContentPart.UpdateChild();
@@ -287,9 +384,393 @@ namespace Avalonia.Controls.UnitTests
             Assert.Single(target.GetLogicalChildren(), content);
         }
 
-        private IControlTemplate TabControlTemplate()
+        [Fact]
+        public void SelectedContentTemplate_Updates_After_New_ContentTemplate()
         {
-            return new FuncControlTemplate<TabControl>(parent =>
+            TabControl target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                ItemsSource = new[] { "Foo" },
+            };
+            var root = new TestRoot(target);
+
+            ApplyTemplate(target);
+            ((ContentPresenter)target.ContentPart).UpdateChild();
+
+            Assert.Equal(null, Assert.IsType<TextBlock>(target.ContentPart.Child).Tag);
+
+            target.ContentTemplate = new FuncDataTemplate<string>((x, _) =>
+                    new TextBlock { Tag = "bar", Text = x });
+
+            Assert.Equal("bar", Assert.IsType<TextBlock>(target.ContentPart.Child).Tag);
+        }
+
+        [Fact]
+        public void Should_Not_Propagate_DataContext_To_TabItem_Content()
+        {
+            var dataContext = "DataContext";
+
+            var tabItem = new TabItem();
+
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                DataContext = dataContext,
+                Items = { tabItem }
+            };
+
+            ApplyTemplate(target);
+
+            Assert.NotEqual(dataContext, tabItem.Content);
+        }
+
+        [Fact]
+        public void Can_Have_Empty_Tab_Control()
+        {
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var xaml = @"
+<Window xmlns='https://github.com/avaloniaui'
+        xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
+        xmlns:local='clr-namespace:Avalonia.Markup.Xaml.UnitTests.Xaml;assembly=Avalonia.Markup.Xaml.UnitTests'>
+    <TabControl Name='tabs' ItemsSource='{Binding Tabs}'/>
+</Window>";
+                var window = (Window)AvaloniaRuntimeXamlLoader.Load(xaml);
+                var tabControl = window.FindControl<TabControl>("tabs");
+
+                tabControl.DataContext = new { Tabs = new List<string>() };
+                window.ApplyTemplate();
+
+                Assert.Equal(0, tabControl.ItemsSource.Count());
+            }
+        }
+
+        [Fact]
+        public void Should_Have_Initial_SelectedValue()
+        {
+            var xaml = @"
+        <TabControl
+            xmlns='https://github.com/avaloniaui'
+            xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
+            xmlns:local='clr-namespace:Avalonia.Markup.Xaml.UnitTests.Xaml;assembly=Avalonia.Markup.Xaml.UnitTests'
+            x:DataType='TabItem'
+            x:Name='tabs'
+            Tag='World' 
+            SelectedValue='{Binding $self.Tag}' 
+            SelectedValueBinding='{Binding Header}'>
+            <TabItem Header='Hello'/>
+            <TabItem Header='World'/>
+        </TabControl>";
+
+            var tabControl = (TabControl)AvaloniaRuntimeXamlLoader.Load(xaml);
+
+            Assert.Equal("World", tabControl.SelectedValue);
+            Assert.Equal(1, tabControl.SelectedIndex);
+        }
+
+        [Fact]
+        public void Tab_Navigation_Should_Move_To_First_TabItem_When_No_Anchor_Element_Selected()
+        {
+            var services = TestServices.StyledWindow.With(
+                focusManager: new FocusManager(),
+                keyboardDevice: () => new KeyboardDevice());
+            using var app = UnitTestApplication.Start(services);
+
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                Items =
+                {
+                    new TabItem { Header = "foo" },
+                    new TabItem { Header = "bar" },
+                    new TabItem { Header = "baz" },
+                }
+            };
+
+            var button = new Button
+            {
+                Content = "Button",
+                [DockPanel.DockProperty] = Dock.Top,
+            };
+
+            var root = new TestRoot
+            {
+                Child = new DockPanel
+                {
+                    Children =
+                    {
+                        button,
+                        target,
+                    }
+                }
+            };
+
+            var navigation = new KeyboardNavigationHandler();
+            navigation.SetOwner(root);
+
+            root.LayoutManager.ExecuteInitialLayoutPass();
+
+            button.Focus();
+            RaiseKeyEvent(button, Key.Tab);
+
+            var item = target.ContainerFromIndex(0);
+            Assert.Same(item, root.FocusManager.GetFocusedElement());
+        }
+
+        [Fact]
+        public void Tab_Navigation_Should_Move_To_Anchor_TabItem()
+        {
+            var services = TestServices.StyledWindow.With(
+                focusManager: new FocusManager(),
+                keyboardDevice: () => new KeyboardDevice());
+            using var app = UnitTestApplication.Start(services);
+
+            var target = new TestTabControl
+            {
+                Template = TabControlTemplate(),
+                Items =
+                {
+                    new TabItem { Header = "foo" },
+                    new TabItem { Header = "bar" },
+                    new TabItem { Header = "baz" },
+                }
+            };
+
+            var button = new Button
+            {
+                Content = "Button",
+                [DockPanel.DockProperty] = Dock.Top,
+            };
+
+            var root = new TestRoot
+            {
+                Width = 1000,
+                Height = 1000,
+                Child = new DockPanel
+                {
+                    Children =
+                    {
+                        button,
+                        target,
+                    }
+                }
+            };
+
+            var navigation = new KeyboardNavigationHandler();
+            navigation.SetOwner(root);
+
+            root.LayoutManager.ExecuteInitialLayoutPass();
+
+            button.Focus();
+            target.Selection.AnchorIndex = 1;
+            RaiseKeyEvent(button, Key.Tab);
+
+            var item = target.ContainerFromIndex(1);
+            Assert.Same(item, root.FocusManager.GetFocusedElement());
+
+            RaiseKeyEvent(item, Key.Tab);
+
+            Assert.Same(button, root.FocusManager.GetFocusedElement());
+
+            target.Selection.AnchorIndex = 2;
+            RaiseKeyEvent(button, Key.Tab);
+
+            item = target.ContainerFromIndex(2);
+            Assert.Same(item, root.FocusManager.GetFocusedElement());
+        }
+
+        [Fact]
+        public void TabItem_Header_Should_Be_Settable_By_Style_When_DataContext_Is_Set()
+        {
+            var tabItem = new TabItem
+            {
+                DataContext = "Some DataContext"
+            };
+
+            _ = new TestRoot
+            {
+                Styles =
+                {
+                    new Style(x => x.OfType<TabItem>())
+                    {
+                        Setters =
+                        {
+                            new Setter(HeaderedContentControl.HeaderProperty, "Header from style")
+                        }
+                    }
+                },
+                Child = tabItem
+            };
+
+            Assert.Equal("Header from style", tabItem.Header);
+        }
+
+        [Fact]
+        public void TabItem_TabStripPlacement_Should_Be_Correctly_Set()
+        {
+            var items = new object[]
+            {
+                "Foo",
+                new TabItem { Content = new TextBlock { Text = "Baz" } }
+            };
+
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                DataContext = "Base",
+                ItemsSource = items
+            };
+
+            ApplyTemplate(target);
+
+            var result = target.GetLogicalChildren()
+                .OfType<TabItem>()
+                .ToList();
+            Assert.Collection(
+                result,
+                x => Assert.Equal(Dock.Top, x.TabStripPlacement),
+                x => Assert.Equal(Dock.Top, x.TabStripPlacement)
+            );
+
+            target.TabStripPlacement = Dock.Right;
+            result = target.GetLogicalChildren()
+                .OfType<TabItem>()
+                .ToList();
+            Assert.Collection(
+                result,
+                x => Assert.Equal(Dock.Right, x.TabStripPlacement),
+                x => Assert.Equal(Dock.Right, x.TabStripPlacement)
+            );
+        }
+
+        [Fact]
+        public void TabItem_TabStripPlacement_Should_Be_Correctly_Set_For_New_Items()
+        {
+            var items = new object[]
+            {
+                "Foo",
+                new TabItem { Content = new TextBlock { Text = "Baz" } }
+            };
+
+            var target = new TabControl
+            {
+                Template = TabControlTemplate(),
+                DataContext = "Base"
+            };
+
+            ApplyTemplate(target);
+
+            target.ItemsSource = items;
+
+            var result = target.GetLogicalChildren()
+                .OfType<TabItem>()
+                .ToList();
+            Assert.Collection(
+                result,
+                x => Assert.Equal(Dock.Top, x.TabStripPlacement),
+                x => Assert.Equal(Dock.Top, x.TabStripPlacement)
+            );
+
+            target.TabStripPlacement = Dock.Right;
+            result = target.GetLogicalChildren()
+                .OfType<TabItem>()
+                .ToList();
+            Assert.Collection(
+                result,
+                x => Assert.Equal(Dock.Right, x.TabStripPlacement),
+                x => Assert.Equal(Dock.Right, x.TabStripPlacement)
+            );
+        }
+
+        [Theory]
+        [InlineData(Key.A, 1)]
+        [InlineData(Key.L, 2)]
+        [InlineData(Key.D, 0)]
+        public void Should_TabControl_Recognizes_AccessKey(Key accessKey, int selectedTabIndex)
+        {
+            var ah = new AccessKeyHandler();
+            using (UnitTestApplication.Start(TestServices.StyledWindow.With(accessKeyHandler: ah)))
+            {
+                var impl = CreateMockTopLevelImpl();
+
+                var tabControl = new TabControl()
+                {
+                    Template = TabControlTemplate(),
+                    Items =
+                    {
+                        new TabItem
+                        {
+                            Header = "General",
+                        },
+                        new TabItem { Header = "_Arch" },
+                        new TabItem { Header = "_Leaf"},
+                        new TabItem { Header = "_Disabled", IsEnabled = false },
+                    }
+                };
+
+                var root = new TestTopLevel(impl.Object)
+                {
+                    Template = CreateTemplate(),
+                    Content = tabControl,
+                };
+
+                root.ApplyTemplate();
+                root.Presenter.UpdateChild();
+                ApplyTemplate(tabControl);
+
+                KeyDown(root, Key.LeftAlt);
+                KeyDown(root, accessKey, KeyModifiers.Alt);
+                KeyUp(root, accessKey, KeyModifiers.Alt);
+                KeyUp(root, Key.LeftAlt);
+
+                Assert.Equal(selectedTabIndex, tabControl.SelectedIndex);
+            }
+
+            static FuncControlTemplate<TestTopLevel> CreateTemplate()
+            {
+                return new FuncControlTemplate<TestTopLevel>((x, scope) =>
+                    new ContentPresenter
+                    {
+                        Name = "PART_ContentPresenter",
+                        [~ContentPresenter.ContentProperty] = new TemplateBinding(ContentControl.ContentProperty),
+                        [~ContentPresenter.ContentTemplateProperty] = new TemplateBinding(ContentControl.ContentTemplateProperty)
+                    }.RegisterInNameScope(scope));
+            }
+
+            static Mock<ITopLevelImpl> CreateMockTopLevelImpl(bool setupProperties = false)
+            {
+                var topLevel = new Mock<ITopLevelImpl>();
+                if (setupProperties)
+                    topLevel.SetupAllProperties();
+                topLevel.Setup(x => x.RenderScaling).Returns(1);
+                topLevel.Setup(x => x.Compositor).Returns(RendererMocks.CreateDummyCompositor());
+                return topLevel;
+            }
+
+            static void KeyDown(IInputElement target, Key key, KeyModifiers modifiers = KeyModifiers.None)
+            {
+                target.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyDownEvent,
+                    Key = key,
+                    KeyModifiers = modifiers,
+                });
+            }
+
+            static void KeyUp(IInputElement target, Key key, KeyModifiers modifiers = KeyModifiers.None)
+            {
+                target.RaiseEvent(new KeyEventArgs
+                {
+                    RoutedEvent = InputElement.KeyUpEvent,
+                    Key = key,
+                    KeyModifiers = modifiers,
+                });
+            }
+        }
+
+        private static IControlTemplate TabControlTemplate()
+        {
+            return new FuncControlTemplate<TabControl>((parent, scope) =>
                 new StackPanel
                 {
                     Children =
@@ -297,31 +778,61 @@ namespace Avalonia.Controls.UnitTests
                         new ItemsPresenter
                         {
                             Name = "PART_ItemsPresenter",
-                            [!TabStrip.ItemsProperty] = parent[!TabControl.ItemsProperty],
-                            [!TabStrip.ItemTemplateProperty] = parent[!TabControl.ItemTemplateProperty],
-                        },
+                        }.RegisterInNameScope(scope),
                         new ContentPresenter
                         {
                             Name = "PART_SelectedContentHost",
-                            [!ContentPresenter.ContentProperty] = parent[!TabControl.SelectedContentProperty],
-                            [!ContentPresenter.ContentTemplateProperty] = parent[!TabControl.SelectedContentTemplateProperty],
-                        }
+                            [~ContentPresenter.ContentProperty] = new TemplateBinding(TabControl.SelectedContentProperty),
+                            [~ContentPresenter.ContentTemplateProperty] = new TemplateBinding(TabControl.SelectedContentTemplateProperty),
+                        }.RegisterInNameScope(scope)
                     }
                 });
         }
 
-        private IControlTemplate TabItemTemplate()
+        private static IControlTemplate TabItemTemplate()
         {
-            return new FuncControlTemplate<TabItem>(parent =>
+            return new FuncControlTemplate<TabItem>((parent, scope) =>
                 new ContentPresenter
                 {
                     Name = "PART_ContentPresenter",
-                    [!ContentPresenter.ContentProperty] = parent[!TabItem.HeaderProperty],
-                    [!ContentPresenter.ContentTemplateProperty] = parent[!TabItem.HeaderTemplateProperty]
-                });
+                    [~ContentPresenter.ContentProperty] = new TemplateBinding(TabItem.HeaderProperty),
+                    [~ContentPresenter.ContentTemplateProperty] = new TemplateBinding(TabItem.HeaderTemplateProperty),
+                    RecognizesAccessKey = true,
+                }.RegisterInNameScope(scope));
         }
 
-        private void ApplyTemplate(TabControl target)
+        private class TestTopLevel : TopLevel
+        {
+            private readonly ILayoutManager _layoutManager;
+            public bool IsClosed { get; private set; }
+
+            public TestTopLevel(ITopLevelImpl impl, ILayoutManager layoutManager = null)
+                : base(impl)
+            {
+                _layoutManager = layoutManager ?? new LayoutManager(this);
+            }
+
+            private protected override ILayoutManager CreateLayoutManager() => _layoutManager;
+        }
+
+        private static void Prepare(TabControl target)
+        {
+            ApplyTemplate(target);
+            target.Measure(Size.Infinity);
+            target.Arrange(new Rect(target.DesiredSize));
+        }
+
+        private static void RaiseKeyEvent(Control target, Key key, KeyModifiers inputModifiers = 0)
+        {
+            target.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                KeyModifiers = inputModifiers,
+                Key = key
+            });
+        }
+
+        private static void ApplyTemplate(TabControl target)
         {
             target.ApplyTemplate();
 
@@ -333,7 +844,7 @@ namespace Avalonia.Controls.UnitTests
 
                 tabItem.ApplyTemplate();
 
-                ((ContentPresenter)tabItem.Presenter).UpdateChild();
+                tabItem.Presenter.UpdateChild();
             }
 
             target.ContentPart.ApplyTemplate();
@@ -347,6 +858,12 @@ namespace Avalonia.Controls.UnitTests
             }
 
             public string Value { get; }
+        }
+
+        private class TestTabControl : TabControl
+        {
+            protected override Type StyleKeyOverride => typeof(TabControl);
+            public new ISelectionModel Selection => base.Selection;
         }
     }
 }

@@ -1,28 +1,62 @@
 jobs:
+
+- job: GetPRNumber
+  pool:
+    vmImage: 'ubuntu-20.04'
+  variables:
+    SolutionDir: '$(Build.SourcesDirectory)'
+  steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET 8.0 SDK'
+    inputs:
+      packageType: sdk
+      useGlobalJson: true
+  - task: CmdLine@2
+    displayName: 'Run Build'
+    inputs:
+        script: ./build.sh --target OutputVersion --version-output-dir $(Build.ArtifactStagingDirectory)
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'PRNumber'
+      publishLocation: 'Container'
+      
 - job: Linux
   pool:
-    vmImage: 'ubuntu-16.04'
+    vmImage: 'ubuntu-20.04'
   steps:
-  - task: CmdLine@2
-    displayName: 'Install CastXML'
+  - task: UseDotNet@2
+    displayName: 'Use .NET 6.0 Runtime'
     inputs:
-      script: |
-        sudo apt-get update
-        sudo apt-get install castxml
+      packageType: runtime
+      version: 6.0.x
+
+  - task: UseDotNet@2
+    displayName: 'Use .NET 8.0 SDK'
+    inputs:
+      packageType: sdk
+      useGlobalJson: true
 
   - task: CmdLine@2
-    displayName: 'Install Nuke'
+    displayName: 'Install Workloads'
     inputs:
       script: |
-         dotnet tool install --global Nuke.GlobalTool --version 0.12.3
+       dotnet workload install android macos wasm-tools
+
   - task: CmdLine@2
-    displayName: 'Run Nuke'
+    displayName: 'Install Tizen Workload'
+    inputs:
+      targetType: 'inline'
+      script: |
+       curl -sSL https://raw.githubusercontent.com/Samsung/Tizen.NET/main/workload/scripts/workload-install.sh | sudo bash -s -- -d "/opt/hostedtoolcache/dotnet"
+
+  - task: CmdLine@2
+    displayName: 'Run Build'
     inputs:
       script: |
-        export PATH="$PATH:$HOME/.dotnet/tools"
         dotnet --info
         printenv
-        nuke --target CiAzureLinux --configuration=Release
+        ./build.sh --target CiAzureLinux --configuration=Release
 
   - task: PublishTestResults@2
     inputs:
@@ -30,46 +64,59 @@ jobs:
       testResultsFiles: '$(Build.SourcesDirectory)/artifacts/test-results/*.trx'
     condition: not(canceled())
      
+
 - job: macOS
+  variables:
+    SolutionDir: '$(Build.SourcesDirectory)'
   pool:
-    vmImage: 'macOS-10.14'
+    vmImage: 'macos-12'
   steps:
-  - task: DotNetCoreInstaller@0
+  - task: UseDotNet@2
+    displayName: 'Use .NET 6.0 Runtime'
     inputs:
-      version: '2.1.403'
+      packageType: runtime
+      version: 6.0.x
+
+  - task: UseDotNet@2
+    displayName: 'Use .NET 8.0 SDK'
+    inputs:
+      packageType: sdk
+      useGlobalJson: true
 
   - task: CmdLine@2
-    displayName: 'Install Mono 5.18'
+    displayName: 'Install Workloads'
     inputs:
       script: |
-        curl -o ./mono.pkg https://download.mono-project.com/archive/5.18.0/macos-10-universal/MonoFramework-MDK-5.18.0.225.macos10.xamarin.universal.pkg 
-        sudo installer -verbose -pkg ./mono.pkg -target /
+       dotnet workload install android ios macos wasm-tools
+
+  - task: CmdLine@2
+    displayName: 'Install Tizen Workload'
+    inputs:
+      targetType: 'inline'
+      script: |
+       curl -sSL https://raw.githubusercontent.com/Samsung/Tizen.NET/main/workload/scripts/workload-install.sh | sudo bash
+  
+  - task: CmdLine@2
+    displayName: 'Generate avalonia-native'
+    inputs:
+      script: |
+        export COREHOST_TRACE=0
+        export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+        export DOTNET_CLI_TELEMETRY_OPTOUT=1
+        ./build.sh --target GenerateCppHeaders --configuration Release 
 
   - task: Xcode@5
     inputs:
       actions: 'build'
       scheme: ''
-      sdk: 'macosx10.14'
+      sdk: 'macosx12.3'
       configuration: 'Release'
       xcWorkspacePath: '**/*.xcodeproj/project.xcworkspace'
-      xcodeVersion: 'default' # Options: 8, 9, default, specifyPath
+      xcodeVersion: '13' # Options: 8, 9, default, specifyPath
       args: '-derivedDataPath ./'
 
   - task: CmdLine@2
-    displayName: 'Install CastXML'
-    inputs:
-      script: |
-        brew update
-        brew install castxml
-
-  - task: CmdLine@2
-    displayName: 'Install Nuke'
-    inputs:
-      script: |
-       dotnet tool install --global Nuke.GlobalTool --version 0.12.3 
-
-  - task: CmdLine@2
-    displayName: 'Run Nuke'
+    displayName: 'Run Build'
     inputs:
       script: |
         export COREHOST_TRACE=0
@@ -77,10 +124,8 @@ jobs:
         export DOTNET_CLI_TELEMETRY_OPTOUT=1
         which dotnet
         dotnet --info
-        export PATH="$PATH:$HOME/.dotnet/tools"
-        dotnet --info
         printenv
-        nuke --target CiAzureOSX --configuration Release
+        ./build.sh --target CiAzureOSX --configuration Release --skip-previewer
 
   - task: PublishTestResults@2
     inputs:
@@ -102,13 +147,40 @@ jobs:
 
 - job: Windows
   pool:
-    vmImage: 'vs2017-win2016'
+    vmImage: 'windows-2022'
+  variables:
+    SolutionDir: '$(Build.SourcesDirectory)'
   steps:
+  - task: UseDotNet@2
+    displayName: 'Use .NET 6.0 Runtime'
+    inputs:
+      packageType: runtime
+      version: 6.0.x
+
+  - task: UseDotNet@2
+    displayName: 'Use .NET 8.0 SDK'
+    inputs:
+      packageType: sdk
+      useGlobalJson: true
+
+  - task: CmdLine@2
+    displayName: 'Install Workloads'
+    inputs:
+      script: |
+       dotnet workload install android ios tvos wasm-tools
+
+  - task: PowerShell@2
+    displayName: 'Install Tizen Workload'
+    inputs:
+      targetType: 'inline'
+      script: |
+       (New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/Samsung/Tizen.NET/main/workload/scripts/workload-install.ps1') | Invoke-Expression
+
   - task: CmdLine@2
     displayName: 'Install Nuke'
     inputs:
       script: |
-       dotnet tool install --global Nuke.GlobalTool --version 0.12.3 
+       dotnet tool install --global Nuke.GlobalTool --version 6.2.1 
 
   - task: CmdLine@2
     displayName: 'Run Nuke'
@@ -134,3 +206,4 @@ jobs:
       pathToPublish: '$(Build.SourcesDirectory)/artifacts/zip'
       artifactName: 'Samples'
     condition: succeeded()
+

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Moq;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -31,7 +28,7 @@ namespace Avalonia.Markup.UnitTests.Data
 
             public string Foo
             {
-                get { return _foo; }
+                get => _foo;
                 set
                 {
                     _foo = value;

@@ -1,18 +1,14 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.ComponentModel;
+﻿using System;
 using System.Linq;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Presenters;
+using System.Reactive.Subjects;
+using Avalonia.Controls.Shapes;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Markup.Data;
+using Avalonia.Headless;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Avalonia.UnitTests;
+using Avalonia.VisualTree;
 using Moq;
 using Xunit;
 
@@ -20,25 +16,18 @@ namespace Avalonia.Controls.UnitTests
 {
     public class DatePickerTests
     {
-        private static bool CompareDates(DateTime first, DateTime second)
-        {
-            return first.Year == second.Year &&
-                first.Month == second.Month &&
-                first.Day == second.Day;
-        }
-
         [Fact]
         public void SelectedDateChanged_Should_Fire_When_SelectedDate_Set()
         {
             using (UnitTestApplication.Start(Services))
             {
                 bool handled = false;
-                DatePicker datePicker = CreateControl();
-                datePicker.SelectedDateChanged += (s,e) =>
+                DatePicker datePicker = new DatePicker();
+                datePicker.SelectedDateChanged += (s, e) =>
                 {
                     handled = true;
                 };
-                DateTime value = new DateTime(2000, 10, 10);
+                DateTimeOffset value = new DateTimeOffset(2000, 10, 10, 0, 0, 0, TimeSpan.Zero);
                 datePicker.SelectedDate = value;
                 Threading.Dispatcher.UIThread.RunJobs();
                 Assert.True(handled);
@@ -46,85 +35,264 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
-        public void Setting_Selected_Date_To_Blackout_Date_Should_Throw()
+        public void DayVisible_False_Should_Hide_Day()
         {
             using (UnitTestApplication.Start(Services))
             {
-                DatePicker datePicker = CreateControl();
-                datePicker.BlackoutDates.AddDatesInPast();
+                DatePicker datePicker = new DatePicker
+                {
+                    Template = CreateTemplate(),
+                    DayVisible = false
+                };
+                datePicker.ApplyTemplate();
+                Threading.Dispatcher.UIThread.RunJobs();
 
-                DateTime goodValue = DateTime.Today.AddDays(1);
-                datePicker.SelectedDate = goodValue;
-                Assert.True(CompareDates(datePicker.SelectedDate.Value, goodValue));
+                var desc = datePicker.GetVisualDescendants();
+                Assert.True(desc.Count() > 1);//Should be layoutroot grid & button
+                TextBlock dayText = null;
+                Grid container = null;
 
-                DateTime badValue = DateTime.Today.AddDays(-1);
-                Assert.ThrowsAny<ArgumentOutOfRangeException>(
-                    () => datePicker.SelectedDate = badValue);
+                Assert.True(desc.ElementAt(1) is Button);
+
+                container = (desc.ElementAt(1) as Button).Content as Grid;
+                Assert.True(container != null);
+
+                for(int i = 0; i < container.Children.Count; i++)
+                {
+                    if(container.Children[i] is TextBlock tb && tb.Name == "PART_DayTextBlock")
+                    {
+                        dayText = tb;
+                        break;
+                    }
+                }
+
+                Assert.True(dayText != null);
+                Assert.True(!dayText.IsVisible);
+                Assert.True(container.ColumnDefinitions.Count == 3);
             }
         }
 
         [Fact]
-        public void Adding_Blackout_Dates_Containing_Selected_Date_Should_Throw()
+        public void MonthVisible_False_Should_Hide_Month()
         {
             using (UnitTestApplication.Start(Services))
             {
-                DatePicker datePicker = CreateControl();
-                datePicker.SelectedDate = DateTime.Today.AddDays(5);
+                DatePicker datePicker = new DatePicker
+                {
+                    Template = CreateTemplate(),
+                    MonthVisible = false
+                };
+                datePicker.ApplyTemplate();
+                Threading.Dispatcher.UIThread.RunJobs();
 
-                Assert.ThrowsAny<ArgumentOutOfRangeException>(
-                    () => datePicker.BlackoutDates.Add(new CalendarDateRange(DateTime.Today, DateTime.Today.AddDays(10))));
+                var desc = datePicker.GetVisualDescendants();
+                Assert.True(desc.Count() > 1);//Should be layoutroot grid & button
+                TextBlock monthText = null;
+                Grid container = null;
+
+                Assert.True(desc.ElementAt(1) is Button);
+
+                container = (desc.ElementAt(1) as Button).Content as Grid;
+                Assert.True(container != null);
+
+                for (int i = 0; i < container.Children.Count; i++)
+                {
+                    if (container.Children[i] is TextBlock tb && tb.Name == "PART_MonthTextBlock")
+                    {
+                        monthText = tb;
+                        break;
+                    }
+                }
+
+                Assert.True(monthText != null);
+                Assert.True(!monthText.IsVisible);
+                Assert.True(container.ColumnDefinitions.Count == 3);
             }
         }
 
-        private static TestServices Services => TestServices.MockThreadingInterface.With(
-            standardCursorFactory: Mock.Of<IStandardCursorFactory>());
-
-        private DatePicker CreateControl()
+        [Fact]
+        public void YearVisible_False_Should_Hide_Year()
         {
-            var datePicker =
-                new DatePicker
+            using (UnitTestApplication.Start(Services))
+            {
+                DatePicker datePicker = new DatePicker
                 {
-                    Template = CreateTemplate()
+                    Template = CreateTemplate(),
+                    YearVisible = false
                 };
+                datePicker.ApplyTemplate();
+                Threading.Dispatcher.UIThread.RunJobs();
 
-            datePicker.ApplyTemplate();
-            return datePicker;
+                var desc = datePicker.GetVisualDescendants();
+                Assert.True(desc.Count() > 1);//Should be layoutroot grid & button
+                TextBlock yearText = null;
+                Grid container = null;
+
+                Assert.True(desc.ElementAt(1) is Button);
+
+                container = (desc.ElementAt(1) as Button).Content as Grid;
+                Assert.True(container != null);
+
+                for (int i = 0; i < container.Children.Count; i++)
+                {
+                    if (container.Children[i] is TextBlock tb && tb.Name == "PART_YearTextBlock")
+                    {
+                        yearText = tb;
+                        break;
+                    }
+                }
+
+                Assert.True(yearText != null);
+                Assert.True(!yearText.IsVisible);
+                Assert.True(container.ColumnDefinitions.Count == 3);
+            }
         }
 
-        private IControlTemplate CreateTemplate()
+        [Fact]
+        public void SelectedDate_null_Should_Use_Placeholders()
         {
-            return new FuncControlTemplate<DatePicker>(control =>
+            using (UnitTestApplication.Start(Services))
             {
-                var textBox = 
-                    new TextBox
-                    {
-                        Name = "PART_TextBox"
-                    };
-                var button =
-                    new Button
-                    {
-                        Name = "PART_Button"
-                    };
-                var calendar =
-                    new Calendar
-                    {
-                        Name = "PART_Calendar"
-                    };
-                var popup =
-                    new Popup
-                    {
-                        Name = "PART_Popup"
-                    };
+                DatePicker datePicker = new DatePicker
+                {
+                    Template = CreateTemplate(),
+                    YearVisible = false
+                };
+                datePicker.ApplyTemplate();
+                Threading.Dispatcher.UIThread.RunJobs();
 
-                var panel = new Panel();
-                panel.Children.Add(textBox);
-                panel.Children.Add(button);
-                panel.Children.Add(popup);
-                panel.Children.Add(calendar);
+                var desc = datePicker.GetVisualDescendants();
+                Assert.True(desc.Count() > 1);//Should be layoutroot grid & button
+                TextBlock yearText = null;
+                TextBlock monthText = null;
+                TextBlock dayText = null;
+                Grid container = null;
 
-                return panel;
+                Assert.True(desc.ElementAt(1) is Button);
+
+                container = (desc.ElementAt(1) as Button).Content as Grid;
+                Assert.True(container != null);
+
+                for (int i = 0; i < container.Children.Count; i++)
+                {
+                    if (container.Children[i] is TextBlock tb && tb.Name == "PART_YearTextBlock")
+                    {
+                        yearText = tb;
+                    }
+                    else if (container.Children[i] is TextBlock tb1 && tb1.Name == "PART_MonthTextBlock")
+                    {
+                        monthText = tb1;
+                    }
+                    else if (container.Children[i] is TextBlock tb2 && tb2.Name == "PART_DayTextBlock")
+                    {
+                        dayText = tb2;
+                    }
+                }
+
+                DateTimeOffset value = new DateTimeOffset(2000, 10, 10, 0, 0, 0, TimeSpan.Zero);
+                datePicker.SelectedDate = value;
+
+                Assert.NotNull(dayText.Text);
+                Assert.NotNull(monthText.Text);
+                Assert.NotNull(yearText.Text);
+                Assert.False(datePicker.Classes.Contains(":hasnodate"));
+
+                datePicker.SelectedDate = null;
+
+                Assert.Null(dayText.Text);
+                Assert.Null(monthText.Text);
+                Assert.Null(yearText.Text);
+                Assert.True(datePicker.Classes.Contains(":hasnodate"));
+            }
+        }
+
+        [Fact]
+        public void SelectedDate_EnableDataValidation()
+        {
+            var handled = false;
+            var datePicker = new DatePicker();
+
+            datePicker.SelectedDateChanged += (s, e) =>
+            {
+                var minDateTime = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                var maxDateTime = new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+                if (e.NewDate < minDateTime)
+                    throw new DataValidationException($"dateTime is less than {minDateTime}");
+                if (e.NewDate > maxDateTime)
+                    throw new DataValidationException($"dateTime is over {maxDateTime}");
+
+                handled = true;
+            };
+
+            // dateTime is less than
+            Assert.Throws<DataValidationException>(() => datePicker.SelectedDate = new DateTimeOffset(1999, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+            // dateTime is over
+            Assert.Throws<DataValidationException>(() => datePicker.SelectedDate = new DateTimeOffset(2021, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+            var exception = new DataValidationException("failed validation");
+            var observable =
+                new BehaviorSubject<BindingNotification>(new BindingNotification(exception,
+                    BindingErrorType.DataValidationError));
+            datePicker.Bind(DatePicker.SelectedDateProperty, observable);
+
+            Assert.True(DataValidationErrors.GetHasErrors(datePicker));
+
+            Dispatcher.UIThread.RunJobs();
+            datePicker.SelectedDate = new DateTimeOffset(2005, 5, 10, 11, 12, 13, TimeSpan.Zero);
+            Assert.True(handled);
+        }
+
+        private static TestServices Services => TestServices.MockThreadingInterface.With(
+            fontManagerImpl: new HeadlessFontManagerStub(),
+            standardCursorFactory: Mock.Of<ICursorFactory>(),
+            textShaperImpl: new HeadlessTextShaperStub(),
+            renderInterface: new HeadlessPlatformRenderInterface());
+
+        private static IControlTemplate CreateTemplate()
+        {
+            return new FuncControlTemplate((control, scope) =>
+            {
+                var layoutRoot = new Grid
+                {
+                    Name = "LayoutRoot"
+                }.RegisterInNameScope(scope);
+                //Skip contentpresenter
+                var flyoutButton = new Button
+                {
+                    Name = "PART_FlyoutButton"
+                }.RegisterInNameScope(scope);
+                var contentGrid = new Grid
+                {
+                    Name = "PART_ButtonContentGrid"
+                }.RegisterInNameScope(scope);
+                var dayText = new TextBlock
+                {
+                    Name = "PART_DayTextBlock"
+                }.RegisterInNameScope(scope);
+                var monthText = new TextBlock
+                {
+                    Name = "PART_MonthTextBlock"
+                }.RegisterInNameScope(scope);
+                var yearText = new TextBlock
+                {
+                    Name = "PART_YearTextBlock"
+                }.RegisterInNameScope(scope);
+                var firstSpacer = new Rectangle
+                {
+                    Name = "PART_FirstSpacer"
+                }.RegisterInNameScope(scope);
+                var secondSpacer = new Rectangle
+                {
+                    Name = "PART_SecondSpacer"
+                }.RegisterInNameScope(scope);
+               
+                contentGrid.Children.AddRange(new Control[] { dayText, monthText, yearText, firstSpacer, secondSpacer });
+                flyoutButton.Content = contentGrid;
+                layoutRoot.Children.Add(flyoutButton);
+                return layoutRoot;
             });
-
         }
     }
 }

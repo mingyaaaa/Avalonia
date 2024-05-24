@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Direct2D1.Media;
 using Avalonia.Direct2D1.Media.Imaging;
 using Avalonia.Platform;
@@ -8,7 +5,7 @@ using Avalonia.Rendering;
 
 namespace Avalonia.Direct2D1
 {
-    public class RenderTarget : IRenderTarget, ILayerFactory
+    internal class RenderTarget : IRenderTarget, ILayerFactory
     {
         /// <summary>
         /// The render target.
@@ -28,12 +25,14 @@ namespace Avalonia.Direct2D1
         /// Creates a drawing context for a rendering session.
         /// </summary>
         /// <returns>An <see cref="Avalonia.Platform.IDrawingContextImpl"/>.</returns>
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
         {
-            return new DrawingContextImpl(visualBrushRenderer, this, _renderTarget);
+            return new DrawingContextImpl(this, _renderTarget, useScaledDrawing);
         }
 
-        public IRenderTargetBitmapImpl CreateLayer(Size size)
+        public bool IsCorrupted => false;
+
+        public IDrawingContextLayerImpl CreateLayer(Size size)
         {
             return D2DRenderTargetBitmapImpl.CreateCompatible(_renderTarget, size);
         }

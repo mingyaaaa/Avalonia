@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 
 namespace Avalonia.Markup.Xaml.UnitTests
@@ -15,14 +12,14 @@ namespace Avalonia.Markup.Xaml.UnitTests
 
         public int Int
         {
-            get { return GetValue(IntProperty); }
-            set { SetValue(IntProperty, value); }
+            get => GetValue(IntProperty);
+            set => SetValue(IntProperty, value);
         }
 
         public string String
         {
-            get { return GetValue(StringProperty); }
-            set { SetValue(StringProperty, value); }
+            get => GetValue(StringProperty);
+            set => SetValue(StringProperty, value);
         }
     }
 }

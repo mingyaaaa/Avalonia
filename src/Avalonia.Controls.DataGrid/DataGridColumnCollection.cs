@@ -12,7 +12,7 @@ namespace Avalonia.Controls
 {
     internal class DataGridColumnCollection : ObservableCollection<DataGridColumn>
     {
-        private DataGrid _owningGrid;
+        private readonly DataGrid _owningGrid;
 
         public DataGridColumnCollection(DataGrid owningGrid)
         {
@@ -124,18 +124,8 @@ namespace Avalonia.Controls
 
         internal int VisibleColumnCount
         {
-            get
-            {
-                int visibleColumnCount = 0;
-                for (int columnIndex = 0; columnIndex < ItemsInternal.Count; columnIndex++)
-                {
-                    if (ItemsInternal[columnIndex].IsVisible)
-                    {
-                        visibleColumnCount++;
-                    }
-                }
-                return visibleColumnCount;
-            }
+            get;
+            private set;
         }
 
         internal double VisibleEdgedColumnsWidth
@@ -200,7 +190,7 @@ namespace Avalonia.Controls
                 }
                 if (dataGridColumn == null)
                 {
-                    throw new ArgumentNullException("dataGridColumn");
+                    throw new ArgumentNullException(nameof(dataGridColumn));
                 }
 
                 int columnIndexWithFiller = columnIndex;
@@ -246,7 +236,8 @@ namespace Avalonia.Controls
 
         protected override void SetItem(int columnIndex, DataGridColumn dataGridColumn)
         {
-            throw new NotSupportedException();
+            RemoveItem(columnIndex);
+            InsertItem(columnIndex, dataGridColumn);
         }
 
         internal bool DisplayInOrder(int columnIndex1, int columnIndex2)
@@ -287,16 +278,20 @@ namespace Avalonia.Controls
         {
             VisibleStarColumnCount = 0;
             VisibleEdgedColumnsWidth = 0;
+            VisibleColumnCount = 0;
+
             for (int columnIndex = 0; columnIndex < ItemsInternal.Count; columnIndex++)
             {
-                if (ItemsInternal[columnIndex].IsVisible)
+                var item = ItemsInternal[columnIndex];
+                if (item.IsVisible)
                 {
-                    ItemsInternal[columnIndex].EnsureWidth();
-                    if (ItemsInternal[columnIndex].Width.IsStar)
+                    VisibleColumnCount++;
+                    item.EnsureWidth();
+                    if (item.Width.IsStar)
                     {
                         VisibleStarColumnCount++;
                     }
-                    VisibleEdgedColumnsWidth += ItemsInternal[columnIndex].ActualWidth;
+                    VisibleEdgedColumnsWidth += item.ActualWidth;
                 }
             }
         }

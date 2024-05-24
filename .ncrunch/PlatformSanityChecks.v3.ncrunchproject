@@ -1,7 +1,8 @@
 ﻿<ProjectConfiguration>
   <Settings>
-    <HiddenComponentWarnings>
-      <Value>MissingOrIgnoredProjectReference</Value>
-    </HiddenComponentWarnings>
+    <CustomBuildProperties>
+      <Value>TargetFramework = net8.0</Value>
+    </CustomBuildProperties>
+    <IgnoreThisComponentCompletely>True</IgnoreThisComponentCompletely>
   </Settings>
 </ProjectConfiguration>

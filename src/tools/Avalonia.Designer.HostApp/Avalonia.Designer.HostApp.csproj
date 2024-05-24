@@ -1,23 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net461;netcoreapp2.0</TargetFrameworks>
+    <TargetFrameworks>net461;netstandard2.0;$(AvsCurrentTargetFramework)</TargetFrameworks>
+    <DefineConstants>$(DefineConstants);XAMLX_INTERNAL</DefineConstants>
+    <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.DesignerSupport\Avalonia.DesignerSupport.csproj" />
-    <ProjectReference Include="..\..\Markup\Avalonia.Markup.Xaml\Avalonia.Markup.Xaml.csproj" />
-    <ProjectReference Include="..\..\Markup\Avalonia.Markup\Avalonia.Markup.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Animation\Avalonia.Animation.csproj" />
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
     <ProjectReference Include="..\..\Avalonia.Controls\Avalonia.Controls.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Diagnostics\Avalonia.Diagnostics.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Input\Avalonia.Input.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Interactivity\Avalonia.Interactivity.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Layout\Avalonia.Layout.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Visuals\Avalonia.Visuals.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Styling\Avalonia.Styling.csproj" />
-    <ProjectReference Include="..\..\Avalonia.Themes.Default\Avalonia.Themes.Default.csproj" />
   </ItemGroup>
-
-  <Import Project="..\..\..\build\NetFX.props" />
+  <ItemGroup>
+    <Compile Include="..\..\..\src\Markup\Avalonia.Markup.Xaml.Loader\CompilerExtensions\**\*.cs" />
+    <Compile Include="..\..\..\src\Markup\Avalonia.Markup.Xaml.Loader\AvaloniaXamlIlRuntimeCompiler.cs" />
+    <Compile Include="..\..\..\src\Markup\Avalonia.Markup.Xaml.Loader\CompilerDynamicDependencies.cs" />
+    <Compile Include="..\..\..\src\Avalonia.Base\Metadata\NullableAttributes.cs" Link="Compatibility\NullableAttributes.cs" />
+    <Compile Include="..\..\..\src\Avalonia.Base\Compatibility\TrimmingAttributes.cs" Link="Compatibility\TrimmingAttributes.cs" />
+    <Compile Include="..\..\..\src\Shared\IsExternalInit.cs" Link="Compatibility\IsExternalInit.cs" />
+  </ItemGroup>
+  <Import Project="..\..\..\src\Markup\Avalonia.Markup.Xaml.Loader\IncludeXamlIlSre.props" />
+  <Import Project="..\..\..\build\DevAnalyzers.props" />
+  <Import Project="..\..\..\build\TrimmingEnable.props" />
 </Project>

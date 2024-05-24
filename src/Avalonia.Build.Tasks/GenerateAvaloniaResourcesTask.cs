@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
-using System.Runtime.Serialization.Json;
 using System.Text;
 using Avalonia.Markup.Xaml.PortableXaml;
+using Avalonia.Markup.Xaml.XamlIl.CompilerExtensions;
 using Avalonia.Utilities;
 using Microsoft.Build.Framework;
-using SPath=System.IO.Path;
+using SPath = System.IO.Path;
 namespace Avalonia.Build.Tasks
 {
     public class GenerateAvaloniaResourcesTask : ITask
@@ -19,8 +19,10 @@ namespace Avalonia.Build.Tasks
         public string Root { get; set; }
         [Required]
         public string Output { get; set; }
-        [Required]
-        public ITaskItem[] EmbeddedResources { get; set; }
+
+        public string ReportImportance { get; set; }
+
+        private MessageImportance _reportImportance;
 
         class Source
         {
@@ -29,16 +31,17 @@ namespace Avalonia.Build.Tasks
             private byte[] _data;
             private string _sourcePath;
 
-            public Source(string file, string root)
+            public Source(ITaskItem avaloniaResourceItem, string root)
             {
-                file = SPath.GetFullPath(file);
                 root = SPath.GetFullPath(root);
-                var fileUri = new Uri(file, UriKind.Absolute);
-                var rootUri = new Uri(root, UriKind.Absolute);
-                rootUri = new Uri(rootUri.ToString().TrimEnd('/') + '/');
-                Path = '/' + rootUri.MakeRelativeUri(fileUri).ToString().TrimStart('/');
-                _sourcePath = file;
+                var relativePath = avaloniaResourceItem.ItemSpec;
+                _sourcePath = SPath.Combine(root, relativePath);
                 Size = (int)new FileInfo(_sourcePath).Length;
+                var link = avaloniaResourceItem.GetMetadata("Link");
+                var path = !string.IsNullOrEmpty(link)
+                    ? link
+                    : relativePath;
+                Path = "/" + path.Replace('\\', '/');
             }
 
             public string SystemPath => _sourcePath ?? Path;
@@ -65,51 +68,46 @@ namespace Avalonia.Build.Tasks
             }
         }
 
-        List<Source> BuildResourceSources() => Resources.Select(r => new Source(r.ItemSpec, Root)).ToList();
+        List<Source> BuildResourceSources()
+           => Resources.Select(r =>
+           {
+               var src = new Source(r, Root);
+               BuildEngine.LogMessage(FormattableString.Invariant($"avares -> name:{src.Path}, path: {src.SystemPath}, size:{src.Size}, ItemSpec:{r.ItemSpec}"), _reportImportance);
+               return src;
+           }).ToList();
 
         private void Pack(Stream output, List<Source> sources)
         {
-            var offsets = new Dictionary<Source, int>();
-            var coffset = 0;
-            foreach (var s in sources)
-            {
-                offsets[s] = coffset;
-                coffset += s.Size;
-            }
-            var index = sources.Select(s => new AvaloniaResourcesIndexEntry
-            {
-                Path = s.Path,
-                Size = s.Size,
-                Offset = offsets[s]
-            }).ToList();
-            var ms = new MemoryStream();
-            AvaloniaResourcesIndexReaderWriter.Write(ms, index);
-            new BinaryWriter(output).Write((int)ms.Length);
-            ms.Position = 0;
-            ms.CopyTo(output);
-            foreach (var s in sources)
-            {
-                using(var input = s.Open())
-                    input.CopyTo(output);
-            }
+            AvaloniaResourcesIndexReaderWriter.WriteResources(
+                output,
+                sources.Select(source => new AvaloniaResourcesEntry
+                {
+                    Path = source.Path,
+                    Size = source.Size,
+                    SystemPath = source.SystemPath,
+                    Open = source.Open
+                }).ToList());
         }
 
         private bool PreProcessXamlFiles(List<Source> sources)
         {
-            var typeToXamlIndex = new Dictionary<string, string>(); 
-            
-            foreach (var s in sources.ToList())
+            var typeToXamlIndex = new Dictionary<string, string>();
+
+            foreach (var s in sources.ToArray())
             {
-                if (s.Path.ToLowerInvariant().EndsWith(".xaml") || s.Path.ToLowerInvariant().EndsWith(".paml"))
+                var path = s.Path;
+                if (path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase) 
+                    || path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase) 
+                    || path.EndsWith(".paml", StringComparison.OrdinalIgnoreCase) )
                 {
                     XamlFileInfo info;
                     try
                     {
                         info = XamlFileInfo.Parse(s.ReadAsString());
                     }
-                    catch(Exception e)
+                    catch (Exception e)
                     {
-                        BuildEngine.LogError(BuildEngineErrorCode.InvalidXAML, s.SystemPath, "File doesn't contain valid XAML: " + e);
+                        BuildEngine.LogError(AvaloniaXamlDiagnosticCodes.InvalidXAML, s.SystemPath, "File doesn't contain valid XAML: " + e);
                         return false;
                     }
 
@@ -117,12 +115,12 @@ namespace Avalonia.Build.Tasks
                     {
                         if (typeToXamlIndex.ContainsKey(info.XClass))
                         {
-                            
-                            BuildEngine.LogError(BuildEngineErrorCode.DuplicateXClass, s.SystemPath,
+
+                            BuildEngine.LogError(AvaloniaXamlDiagnosticCodes.DuplicateXClass, s.SystemPath,
                                 $"Duplicate x:Class directive, {info.XClass} is already used in {typeToXamlIndex[info.XClass]}");
                             return false;
                         }
-                        typeToXamlIndex[info.XClass] = s.Path;
+                        typeToXamlIndex[info.XClass] = path;
                     }
                 }
             }
@@ -136,12 +134,12 @@ namespace Avalonia.Build.Tasks
             sources.Add(new Source("/!AvaloniaResourceXamlInfo", ms.ToArray()));
             return true;
         }
-        
+
         public bool Execute()
         {
-            foreach(var r in EmbeddedResources.Where(r=>r.ItemSpec.EndsWith(".xaml")||r.ItemSpec.EndsWith(".paml")))
-                BuildEngine.LogWarning(BuildEngineErrorCode.LegacyResmScheme, r.ItemSpec,
-                    "XAML file is packed using legacy EmbeddedResource/resm scheme, relative URIs won't work");
+            Enum.TryParse(ReportImportance, true, out _reportImportance);
+
+            BuildEngine.LogMessage($"GenerateAvaloniaResourcesTask -> Root: {Root}, {Resources?.Count()} resources, Output:{Output}", _reportImportance < MessageImportance.Low ? MessageImportance.High : _reportImportance);
             var resources = BuildResourceSources();
 
             if (!PreProcessXamlFiles(resources))

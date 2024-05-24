@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using Avalonia.Platform;
+using Avalonia.Utilities;
 
 namespace Avalonia.UnitTests
 {
@@ -39,7 +40,19 @@ namespace Avalonia.UnitTests
 
         public IEnumerable<Uri> GetAssets(Uri uri, Uri baseUri)
         {
-            return _assets.Keys.Where(x => x.AbsolutePath.Contains(uri.AbsolutePath));
+            var absPath = uri.GetUnescapeAbsolutePath();
+            return _assets.Keys.Where(
+                x => x.GetUnescapeAbsolutePath().IndexOf(absPath, StringComparison.Ordinal) >= 0);
+        }
+
+        public void InvalidateAssemblyCache(string name)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void InvalidateAssemblyCache()
+        {
+            throw new NotImplementedException();
         }
 
         public void SetDefaultAssembly(Assembly asm)

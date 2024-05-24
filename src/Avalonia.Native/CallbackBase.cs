@@ -1,80 +1,20 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using SharpGen.Runtime;
+﻿using System;
+using System.Runtime.ExceptionServices;
+using Avalonia.MicroCom;
+using Avalonia.Platform;
+using Avalonia.Threading;
+using MicroCom.Runtime;
 
 namespace Avalonia.Native
 {
-    public class CallbackBase : SharpGen.Runtime.IUnknown
+    internal abstract class NativeCallbackBase : CallbackBase, IMicroComExceptionCallback
     {
-        private uint _refCount;
-        private bool _disposed;
-        private readonly object _lock = new object();
-        private ShadowContainer _shadow;
-
-        public CallbackBase()
+        public void RaiseException(Exception e)
         {
-            _refCount = 1;
-        }
-
-        public ShadowContainer Shadow
-        {
-            get => _shadow;
-            set
+            if (AvaloniaLocator.Current.GetService<IDispatcherImpl>() is DispatcherImpl dispatcherImpl)
             {
-                lock (_lock)
-                {
-                    if (_disposed && value != null)
-                    {
-                        throw new ObjectDisposedException("CallbackBase");
-                    }
-
-                    _shadow = value;
-                }
+                dispatcherImpl.PropagateCallbackException(ExceptionDispatchInfo.Capture(e));
             }
-        }
-
-        public uint AddRef()
-        {
-            lock (_lock)
-            {
-                return ++_refCount;
-            }
-        }
-
-        public void Dispose()
-        {
-            lock (_lock)
-            {
-                if (!_disposed)
-                {
-                    _disposed = true;
-                    Release();
-                }
-            }
-        }
-
-        public uint Release()
-        {
-            lock (_lock)
-            {
-                _refCount--;
-
-                if (_refCount == 0)
-                {
-                    Shadow?.Dispose();
-                    Shadow = null;
-                    Destroyed();
-                }
-
-                return _refCount;
-            }
-        }
-
-        protected virtual void Destroyed()
-        {
-
         }
     }
 }

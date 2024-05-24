@@ -1,8 +1,9 @@
-﻿using System;
+﻿#nullable enable
+
+using System;
 using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Direct2D1.Media;
 using Avalonia.Platform;
-using Avalonia.Rendering;
 using Avalonia.Win32.Interop;
 using SharpDX.WIC;
 using PixelFormat = Avalonia.Platform.PixelFormat;
@@ -11,20 +12,24 @@ namespace Avalonia.Direct2D1
 {
     class FramebufferShimRenderTarget : IRenderTarget
     {
-        private readonly IFramebufferPlatformSurface _surface;
+        private IFramebufferRenderTarget? _target;
 
         public FramebufferShimRenderTarget(IFramebufferPlatformSurface surface)
         {
-            _surface = surface;
+            _target = surface.CreateFramebufferRenderTarget();
         }
 
         public void Dispose()
-        {            
+        {
+            _target?.Dispose();
+            _target = null;
         }
 
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
         {
-            var locked = _surface.Lock();
+            if (_target == null)
+                throw new ObjectDisposedException(nameof(FramebufferShimRenderTarget));
+            var locked = _target.Lock();
             if (locked.Format == PixelFormat.Rgb565)
             {
                 locked.Dispose();
@@ -32,8 +37,10 @@ namespace Avalonia.Direct2D1
             }
 
             return new FramebufferShim(locked)
-                .CreateDrawingContext(visualBrushRenderer);
+                .CreateDrawingContext(useScaledDrawing);
         }
+
+        public bool IsCorrupted => false;
 
         class FramebufferShim : WicRenderTargetBitmapImpl
         {
@@ -45,9 +52,9 @@ namespace Avalonia.Direct2D1
                 _target = target;
             }
             
-            public override IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+            public override IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
             {
-                return base.CreateDrawingContext(visualBrushRenderer, () =>
+                return base.CreateDrawingContext(useScaledDrawing, () =>
                 {
                     using (var l = WicImpl.Lock(BitmapLockFlags.Read))
                     {

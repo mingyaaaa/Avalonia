@@ -1,38 +1,40 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.VisualTree;
 using Avalonia.Win32.Interop;
 
 namespace Avalonia.Win32.Input
 {
-    class WindowsMouseDevice : MouseDevice
+    internal class WindowsMouseDevice : MouseDevice
     {
-        public static WindowsMouseDevice Instance { get; } = new WindowsMouseDevice();
+        private readonly IPointer _pointer;
 
-        public WindowsMouseDevice() : base(new WindowsMousePointer())
+        public WindowsMouseDevice() : base(WindowsMousePointer.CreatePointer(out var pointer))
         {
-            
+            _pointer = pointer;
+        }
+
+        // Normally user should use IPointer.Capture instead of MouseDevice.Capture,
+        // But on Windows we need to handle WM_MOUSE capture manually without having access to the Pointer. 
+        internal void Capture(IInputElement? control)
+        {
+            _pointer.Capture(control);
         }
         
-        public WindowImpl CurrentWindow
+        internal class WindowsMousePointer : Pointer
         {
-            get;
-            set;
-        }
-
-        class WindowsMousePointer : Pointer
-        {
-            public WindowsMousePointer() : base(Pointer.GetNextFreeId(),PointerType.Mouse, true)
+            private WindowsMousePointer() : base(GetNextFreeId(),PointerType.Mouse, true)
             {
             }
-
-            protected override void PlatformCapture(IInputElement element)
+            
+            public static WindowsMousePointer CreatePointer(out WindowsMousePointer pointer)
             {
-                var hwnd = ((element?.GetVisualRoot() as TopLevel)?.PlatformImpl as WindowImpl)
+                return pointer = new WindowsMousePointer();
+            }
+
+            protected override void PlatformCapture(IInputElement? element)
+            {
+                var hwnd = (TopLevel.GetTopLevel(element as Visual)?.PlatformImpl as WindowImpl)
                     ?.Handle.Handle;
 
                 if (hwnd.HasValue && hwnd != IntPtr.Zero)

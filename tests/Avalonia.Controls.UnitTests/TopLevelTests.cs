@@ -1,17 +1,19 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Input.Raw;
 using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Platform;
+using Avalonia.Rendering;
+using Avalonia.Rendering.Composition;
+using Avalonia.Styling;
 using Avalonia.UnitTests;
 using Moq;
 using Xunit;
+using static Avalonia.Controls.UnitTests.MaskedTextBoxTests;
 
 namespace Avalonia.Controls.UnitTests
 {
@@ -22,7 +24,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 var target = new TestTopLevel(impl.Object);
 
                 Assert.True(((ILogical)target).IsAttachedToLogicalTree);
@@ -34,7 +36,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 impl.Setup(x => x.ClientSize).Returns(new Size(123, 456));
 
                 var target = new TestTopLevel(impl.Object);
@@ -48,7 +50,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 impl.Setup(x => x.ClientSize).Returns(new Size(123, 456));
 
                 var target = new TestTopLevel(impl.Object);
@@ -62,7 +64,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 impl.Setup(x => x.ClientSize).Returns(new Size(123, 456));
 
                 var target = new TestTopLevel(impl.Object);
@@ -78,7 +80,7 @@ namespace Avalonia.Controls.UnitTests
 
             using (UnitTestApplication.Start(services))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 
                 var target = new TestTopLevel(impl.Object, Mock.Of<ILayoutManager>());
 
@@ -93,9 +95,9 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 impl.SetupProperty(x => x.Resized);
-                impl.SetupGet(x => x.Scaling).Returns(1);
+                impl.SetupGet(x => x.RenderScaling).Returns(1);
 
                 var target = new TestTopLevel(impl.Object)
                 {
@@ -108,7 +110,7 @@ namespace Avalonia.Controls.UnitTests
                     }
                 };
 
-                target.LayoutManager.ExecuteInitialLayoutPass(target);
+                target.LayoutManager.ExecuteInitialLayoutPass();
 
                 Assert.Equal(new Rect(0, 0, 321, 432), target.Bounds);
             }
@@ -119,7 +121,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
+                var impl = CreateMockTopLevelImpl();
                 impl.Setup(x => x.ClientSize).Returns(new Size(123, 456));
 
                 var target = new TestTopLevel(impl.Object);
@@ -135,13 +137,12 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
+                var impl = CreateMockTopLevelImpl(true);
                 impl.Setup(x => x.ClientSize).Returns(new Size(123, 456));
 
                 // The user has resized the window, so we can no longer auto-size.
                 var target = new TestTopLevel(impl.Object);
-                impl.Object.Resized(new Size(100, 200));
+                impl.Object.Resized(new Size(100, 200), WindowResizeReason.Unspecified);
 
                 Assert.Equal(100, target.Width);
                 Assert.Equal(200, target.Height);
@@ -153,8 +154,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
+                var impl = CreateMockTopLevelImpl(true);
 
                 bool raised = false;
                 var target = new TestTopLevel(impl.Object);
@@ -167,23 +167,54 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
+        public void Impl_Close_Should_Raise_DetachedFromLogicalTree_Event()
+        {
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var impl = CreateMockTopLevelImpl(true);
+
+                var target = new TestTopLevel(impl.Object);
+                var raised = 0;
+
+                target.DetachedFromLogicalTree += (s, e) =>
+                {
+                    Assert.Same(target, e.Root);
+                    Assert.Same(target, e.Source);
+                    Assert.Null(e.Parent);
+                    ++raised;
+                };
+
+                impl.Object.Closed();
+
+                Assert.Equal(1, raised);
+            }
+        }
+
+        [Fact]
         public void Impl_Input_Should_Pass_Input_To_InputManager()
         {
             var inputManagerMock = new Mock<IInputManager>();
+            inputManagerMock.DefaultValue = DefaultValue.Mock;
+            inputManagerMock.SetupAllProperties();
+
             var services = TestServices.StyledWindow.With(inputManager: inputManagerMock.Object);
 
             using (UnitTestApplication.Start(services))
             {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
+                var impl = CreateMockTopLevelImpl(true);
 
                 var target = new TestTopLevel(impl.Object);
 
                 var input = new RawKeyEventArgs(
                     new Mock<IKeyboardDevice>().Object,
                     0,
+                    target,
                     RawKeyEventType.KeyDown,
-                    Key.A, InputModifiers.None);
+                    Key.A,
+                    RawInputModifiers.None,
+                    PhysicalKey.A,
+                    "a");
+
                 impl.Object.Input(input);
 
                 inputManagerMock.Verify(x => x.ProcessInput(input));
@@ -195,28 +226,15 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
+                var impl = CreateMockTopLevelImpl(true);
                 var target = new TestTopLevel(impl.Object);
                 var child = new TestTopLevel(impl.Object);
 
                 target.Template = CreateTemplate();
                 target.Content = child;
+                target.ApplyTemplate();
 
-                Assert.Throws<InvalidOperationException>(() => target.ApplyTemplate());
-            }
-        }
-
-        [Fact]
-        public void Exiting_Application_Notifies_Top_Level()
-        {
-            using (UnitTestApplication.Start(TestServices.StyledWindow))
-            {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
-                var target = new TestTopLevel(impl.Object);
-                UnitTestApplication.Current.Shutdown();
-                Assert.True(target.IsClosed);
+                Assert.Throws<InvalidOperationException>(() => target.Presenter.ApplyTemplate());
             }
         }
 
@@ -225,8 +243,7 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
-                var impl = new Mock<ITopLevelImpl>();
-                impl.SetupAllProperties();
+                var impl = CreateMockTopLevelImpl(true);
                 var target = new TestTopLevel(impl.Object);
                 var raised = false;
 
@@ -237,14 +254,78 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
-        private FuncControlTemplate<TestTopLevel> CreateTemplate()
+        [Fact]
+        public void Close_Should_Dispose_LayoutManager()
         {
-            return new FuncControlTemplate<TestTopLevel>(x =>
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var impl = CreateMockTopLevelImpl(true);
+
+                var layoutManager = new Mock<ILayoutManager>();
+                var target = new TestTopLevel(impl.Object, layoutManager.Object);
+
+                impl.Object.Closed();
+
+                layoutManager.Verify(x => x.Dispose());
+            }
+        }
+
+        [Fact]
+        public void Reacts_To_Changes_In_Global_Styles()
+        {
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var impl = CreateMockTopLevelImpl();
+                impl.SetupGet(x => x.RenderScaling).Returns(1);
+
+                var child = new Border { Classes = { "foo" } };
+                var target = new TestTopLevel(impl.Object)
+                {
+                    Template = CreateTemplate(),
+                    Content = child,
+                };
+
+                target.LayoutManager.ExecuteInitialLayoutPass();
+
+                Assert.Equal(new Thickness(0), child.BorderThickness);
+
+                var style = new Style(x => x.OfType<Border>().Class("foo"))
+                {
+                    Setters =
+                    {
+                        new Setter(Border.BorderThicknessProperty, new Thickness(2))
+                    }
+                };
+
+                Application.Current.Styles.Add(style);
+                target.LayoutManager.ExecuteInitialLayoutPass();
+
+                Assert.Equal(new Thickness(2), child.BorderThickness);
+
+                Application.Current.Styles.Remove(style);
+
+                Assert.Equal(new Thickness(0), child.BorderThickness);
+            }
+        }
+
+        private static FuncControlTemplate<TestTopLevel> CreateTemplate()
+        {
+            return new FuncControlTemplate<TestTopLevel>((x, scope) =>
                 new ContentPresenter
                 {
                     Name = "PART_ContentPresenter",
                     [!ContentPresenter.ContentProperty] = x[!ContentControl.ContentProperty],
-                });
+                }.RegisterInNameScope(scope));
+        }
+
+        private static Mock<ITopLevelImpl> CreateMockTopLevelImpl(bool setupProperties = false)
+        {
+            var topLevel = new Mock<ITopLevelImpl>();
+            if (setupProperties)
+                topLevel.SetupAllProperties();
+            topLevel.Setup(x => x.RenderScaling).Returns(1);
+            topLevel.Setup(x => x.Compositor).Returns(RendererMocks.CreateDummyCompositor());
+            return topLevel;
         }
 
         private class TestTopLevel : TopLevel
@@ -255,16 +336,10 @@ namespace Avalonia.Controls.UnitTests
             public TestTopLevel(ITopLevelImpl impl, ILayoutManager layoutManager = null)
                 : base(impl)
             {
-                _layoutManager = layoutManager ?? new LayoutManager();
+                _layoutManager = layoutManager ?? new LayoutManager(this);
             }
 
-            protected override ILayoutManager CreateLayoutManager() => _layoutManager;
-
-            protected override void HandleApplicationExiting()
-            {
-                base.HandleApplicationExiting();
-                IsClosed = true;
-            }
+            private protected override ILayoutManager CreateLayoutManager() => _layoutManager;
         }
     }
 }

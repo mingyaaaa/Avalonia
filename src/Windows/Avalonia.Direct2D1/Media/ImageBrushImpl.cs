@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using Avalonia.Media;
 using Avalonia.Rendering.Utilities;
 using Avalonia.Utilities;
@@ -8,21 +5,23 @@ using SharpDX.Direct2D1;
 
 namespace Avalonia.Direct2D1.Media
 {
-    public sealed class ImageBrushImpl : BrushImpl
+    internal sealed class ImageBrushImpl : BrushImpl
     {
-        private readonly OptionalDispose<Bitmap> _bitmap;
-
-        private readonly Visuals.Media.Imaging.BitmapInterpolationMode _bitmapInterpolationMode;
+        private readonly OptionalDispose<Bitmap1> _bitmap;
 
         public ImageBrushImpl(
             ITileBrush brush,
             SharpDX.Direct2D1.RenderTarget target,
             BitmapImpl bitmap,
-            Size targetSize)
+            Rect destinationRect)
         {
             var dpi = new Vector(target.DotsPerInch.Width, target.DotsPerInch.Height);
-            var calc = new TileBrushCalculator(brush, bitmap.PixelSize.ToSizeWithDpi(dpi), targetSize);
+            var calc = new TileBrushCalculator(brush, bitmap.PixelSize.ToSizeWithDpi(dpi), destinationRect.Size);
 
+            Vector brushOffset = default;
+            if (brush.DestinationRect.Unit == RelativeUnit.Relative)
+                brushOffset = new Vector(destinationRect.X, destinationRect.Y);
+            
             if (!calc.NeedsIntermediate)
             {
                 _bitmap = bitmap.GetDirect2DBitmap(target);
@@ -30,7 +29,7 @@ namespace Avalonia.Direct2D1.Media
                     target,
                     _bitmap.Value,
                     GetBitmapBrushProperties(brush),
-                    GetBrushProperties(brush, calc.DestinationRect));
+                    GetBrushProperties(brush, calc.DestinationRect, brushOffset));
             }
             else
             {
@@ -40,11 +39,9 @@ namespace Avalonia.Direct2D1.Media
                         target,
                         intermediate.Bitmap,
                         GetBitmapBrushProperties(brush),
-                        GetBrushProperties(brush, calc.DestinationRect));
+                        GetBrushProperties(brush, calc.DestinationRect, brushOffset));
                 }
             }
-
-            _bitmapInterpolationMode = brush.BitmapInterpolationMode;
         }
 
         public override void Dispose()
@@ -64,12 +61,23 @@ namespace Avalonia.Direct2D1.Media
             };
         }
 
-        private static BrushProperties GetBrushProperties(ITileBrush brush, Rect destinationRect)
+        private static BrushProperties GetBrushProperties(ITileBrush brush, Rect destinationRect, Vector offset)
         {
             var tileTransform =
                 brush.TileMode != TileMode.None ?
                 Matrix.CreateTranslation(destinationRect.X, destinationRect.Y) :
                 Matrix.Identity;
+
+            if (offset != default)
+                tileTransform = Matrix.CreateTranslation(offset);
+
+            if (brush.Transform != null && brush.TileMode != TileMode.None)
+            {
+                var transformOrigin = brush.TransformOrigin.ToPixels(destinationRect);
+                var originOffset = Matrix.CreateTranslation(transformOrigin);
+
+                tileTransform = -originOffset * brush.Transform.Value * originOffset * tileTransform;
+            }
 
             return new BrushProperties
             {
@@ -98,7 +106,7 @@ namespace Avalonia.Direct2D1.Media
                 CompatibleRenderTargetOptions.None,
                 calc.IntermediateSize.ToSharpDX());
 
-            using (var context = new RenderTarget(result).CreateDrawingContext(null))
+            using (var context = new RenderTarget(result).CreateDrawingContext(true))
             {
                 var dpi = new Vector(target.DotsPerInch.Width, target.DotsPerInch.Height);
                 var rect = new Rect(bitmap.PixelSize.ToSizeWithDpi(dpi));
@@ -106,8 +114,7 @@ namespace Avalonia.Direct2D1.Media
                 context.Clear(Colors.Transparent);
                 context.PushClip(calc.IntermediateClip);
                 context.Transform = calc.IntermediateTransform;
-                
-                context.DrawImage(RefCountable.CreateUnownedNotClonable(bitmap), 1, rect, rect, _bitmapInterpolationMode);
+                context.DrawBitmap(bitmap, 1, rect, rect);
                 context.PopClip();
             }
 

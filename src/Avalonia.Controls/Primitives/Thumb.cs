@@ -1,12 +1,13 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
+using Avalonia.Automation.Peers;
+using Avalonia.Controls.Automation.Peers;
+using Avalonia.Controls.Metadata;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 
 namespace Avalonia.Controls.Primitives
 {
+    [PseudoClasses(":pressed")]
     public class Thumb : TemplatedControl
     {
         public static readonly RoutedEvent<VectorEventArgs> DragStartedEvent =
@@ -22,28 +23,36 @@ namespace Avalonia.Controls.Primitives
 
         static Thumb()
         {
-            DragStartedEvent.AddClassHandler<Thumb>(x => x.OnDragStarted, RoutingStrategies.Bubble);
-            DragDeltaEvent.AddClassHandler<Thumb>(x => x.OnDragDelta, RoutingStrategies.Bubble);
-            DragCompletedEvent.AddClassHandler<Thumb>(x => x.OnDragCompleted, RoutingStrategies.Bubble);
+            DragStartedEvent.AddClassHandler<Thumb>((x,e) => x.OnDragStarted(e), RoutingStrategies.Bubble);
+            DragDeltaEvent.AddClassHandler<Thumb>((x, e) => x.OnDragDelta(e), RoutingStrategies.Bubble);
+            DragCompletedEvent.AddClassHandler<Thumb>((x, e) => x.OnDragCompleted(e), RoutingStrategies.Bubble);
         }
 
-        public event EventHandler<VectorEventArgs> DragStarted
+        public event EventHandler<VectorEventArgs>? DragStarted
         {
-            add { AddHandler(DragStartedEvent, value); }
-            remove { RemoveHandler(DragStartedEvent, value); }
+            add => AddHandler(DragStartedEvent, value);
+            remove => RemoveHandler(DragStartedEvent, value);
         }
 
-        public event EventHandler<VectorEventArgs> DragDelta
+        public event EventHandler<VectorEventArgs>? DragDelta
         {
-            add { AddHandler(DragDeltaEvent, value); }
-            remove { RemoveHandler(DragDeltaEvent, value); }
+            add => AddHandler(DragDeltaEvent, value);
+            remove => RemoveHandler(DragDeltaEvent, value);
         }
 
-        public event EventHandler<VectorEventArgs> DragCompleted
+        public event EventHandler<VectorEventArgs>? DragCompleted
         {
-            add { AddHandler(DragCompletedEvent, value); }
-            remove { RemoveHandler(DragCompletedEvent, value); }
+            add => AddHandler(DragCompletedEvent, value);
+            remove => RemoveHandler(DragCompletedEvent, value);
         }
+
+        internal void AdjustDrag(Vector v)
+        {
+            if (_lastPoint.HasValue)
+                _lastPoint = _lastPoint.Value + v;
+        }
+
+        protected override AutomationPeer OnCreateAutomationPeer() => new ThumbAutomationPeer(this);
 
         protected virtual void OnDragStarted(VectorEventArgs e)
         {
@@ -55,6 +64,26 @@ namespace Avalonia.Controls.Primitives
 
         protected virtual void OnDragCompleted(VectorEventArgs e)
         {
+        }
+
+        protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+        {
+            if (_lastPoint.HasValue)
+            {
+                var ev = new VectorEventArgs
+                {
+                    RoutedEvent = DragCompletedEvent,
+                    Vector = _lastPoint.Value,
+                };
+
+                _lastPoint = null;
+
+                RaiseEvent(ev);
+            }
+
+            PseudoClasses.Remove(":pressed");
+
+            base.OnPointerCaptureLost(e);
         }
 
         protected override void OnPointerMoved(PointerEventArgs e)
@@ -73,7 +102,6 @@ namespace Avalonia.Controls.Primitives
 
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
-            e.Device.Capture(this);
             e.Handled = true;
             _lastPoint = e.GetPosition(this);
 
@@ -83,6 +111,10 @@ namespace Avalonia.Controls.Primitives
                 Vector = (Vector)_lastPoint,
             };
 
+            PseudoClasses.Add(":pressed");
+
+            e.PreventGestureRecognition();
+
             RaiseEvent(ev);
         }
 
@@ -90,7 +122,6 @@ namespace Avalonia.Controls.Primitives
         {
             if (_lastPoint.HasValue)
             {
-                e.Device.Capture(null);
                 e.Handled = true;
                 _lastPoint = null;
 
@@ -102,6 +133,8 @@ namespace Avalonia.Controls.Primitives
 
                 RaiseEvent(ev);
             }
+
+            PseudoClasses.Remove(":pressed");
         }
     }
 }

@@ -1,27 +1,34 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Serialization.Formatters.Binary;
 using Avalonia.Input;
+using Avalonia.MicroCom;
+using Avalonia.Platform.Storage;
 using Avalonia.Win32.Interop;
+
+using FORMATETC = Avalonia.Win32.Interop.FORMATETC;
 using IDataObject = Avalonia.Input.IDataObject;
 
 namespace Avalonia.Win32
 {
-    class DataObject : IDataObject, IOleDataObject
+    internal sealed class DataObject : CallbackBase, IDataObject, Win32Com.IDataObject
     {
         // Compatibility with WinForms + WPF...
         internal static readonly byte[] SerializedObjectGUID = new Guid("FD9EA796-3B13-4370-A679-56106BB288FB").ToByteArray();
 
-        class FormatEnumerator : IEnumFORMATETC
+        private class FormatEnumerator : CallbackBase, Win32Com.IEnumFORMATETC
         {
-            private FORMATETC[] _formats;
-            private int _current;
+            private readonly FORMATETC[] _formats;
+            private uint _current;
 
-            private FormatEnumerator(FORMATETC[] formats, int current)
+            private FormatEnumerator(FORMATETC[] formats, uint current)
             {
                 _formats = formats;
                 _current = current;
@@ -44,60 +51,68 @@ namespace Avalonia.Win32
                 return result;
             }
 
-            public void Clone(out IEnumFORMATETC newEnum)
-            {
-                newEnum = new FormatEnumerator(_formats, _current);
-            }
-
-            public int Next(int celt, FORMATETC[] rgelt, int[] pceltFetched)
+            public unsafe uint Next(uint celt, FORMATETC* rgelt, uint* results)
             {
                 if (rgelt == null)
-                    return unchecked((int)UnmanagedMethods.HRESULT.E_INVALIDARG);
+                    return (uint)UnmanagedMethods.HRESULT.E_INVALIDARG;
 
-                int i = 0;
+                uint i = 0;
                 while (i < celt && _current < _formats.Length)
                 {
                     rgelt[i] = _formats[_current];
                     _current++;
                     i++;
                 }
-                if (pceltFetched != null)
-                    pceltFetched[0] = i;
 
                 if (i != celt)
-                    return unchecked((int)UnmanagedMethods.HRESULT.S_FALSE);
-                return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
+                    return (uint)UnmanagedMethods.HRESULT.S_FALSE;
+
+                // "results" parameter can be NULL if celt is 1.
+                if (celt != 1 || results != default)
+                    *results = i;
+                return 0;
             }
 
-            public int Reset()
-            {
-                _current = 0;
-                return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
-            }
-
-            public int Skip(int celt)
+            public uint Skip(uint celt)
             {
                 _current += Math.Min(celt, int.MaxValue - _current);
                 if (_current >= _formats.Length)
-                    return unchecked((int)UnmanagedMethods.HRESULT.S_FALSE);
-                return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
+                    return (uint)UnmanagedMethods.HRESULT.S_FALSE;
+                return 0;
+            }
+
+            public void Reset()
+            {
+                _current = 0;
+            }
+
+            public Win32Com.IEnumFORMATETC Clone()
+            {
+                return new FormatEnumerator(_formats, _current);
             }
         }
 
-        private const int DV_E_TYMED = unchecked((int)0x80040069);
-        private const int DV_E_DVASPECT = unchecked((int)0x8004006B);
-        private const int DV_E_FORMATETC = unchecked((int)0x80040064);
-        private const int OLE_E_ADVISENOTSUPPORTED = unchecked((int)0x80040003);
-        private const int STG_E_MEDIUMFULL = unchecked((int)0x80030070);
+        private const uint DV_E_TYMED = 0x80040069;
+        private const uint DV_E_DVASPECT = 0x8004006B;
+        private const uint DV_E_FORMATETC = 0x80040064;
+        private const uint OLE_E_ADVISENOTSUPPORTED = 0x80040003;
+        private const uint STG_E_MEDIUMFULL = 0x80030070;
+
         private const int GMEM_ZEROINIT = 0x0040;
         private const int GMEM_MOVEABLE = 0x0002;
 
 
-        IDataObject _wrapped;
-        
+        private IDataObject _wrapped;
+        public IDataObject Wrapped => _wrapped;
+
         public DataObject(IDataObject wrapped)
         {
-            _wrapped = wrapped;
+            _wrapped = wrapped switch
+            {
+                null => throw new ArgumentNullException(nameof(wrapped)),
+                DataObject or OleDataObject => throw new ArgumentException($"Cannot wrap a {wrapped.GetType()}"),
+                _ => wrapped
+            };
         }
 
         #region IDataObject
@@ -111,17 +126,7 @@ namespace Avalonia.Win32
             return _wrapped.GetDataFormats();
         }
 
-        IEnumerable<string> IDataObject.GetFileNames()
-        {
-            return _wrapped.GetFileNames();
-        }
-
-        string IDataObject.GetText()
-        {
-            return _wrapped.GetText();
-        }
-
-        object IDataObject.Get(string dataFormat)
+        object? IDataObject.Get(string dataFormat)
         {
             return _wrapped.Get(dataFormat);
         }
@@ -129,155 +134,167 @@ namespace Avalonia.Win32
 
         #region IOleDataObject
 
-        int IOleDataObject.DAdvise(ref FORMATETC pFormatetc, ADVF advf, IAdviseSink adviseSink, out int connection)
+        unsafe int Win32Com.IDataObject.DAdvise(FORMATETC* pFormatetc, int advf, void* adviseSink)
         {
-            if (_wrapped is IOleDataObject ole)
-                return ole.DAdvise(ref pFormatetc, advf, adviseSink, out connection);
-            connection = 0;
-            return OLE_E_ADVISENOTSUPPORTED;
+            if (_wrapped is Win32Com.IDataObject ole)
+                return ole.DAdvise(pFormatetc, advf, adviseSink);
+            return 0;
         }
 
-        void IOleDataObject.DUnadvise(int connection)
+        void Win32Com.IDataObject.DUnadvise(int connection)
         {
-            if (_wrapped is IOleDataObject ole)
+            if (_wrapped is Win32Com.IDataObject ole)
                 ole.DUnadvise(connection);
-            Marshal.ThrowExceptionForHR(OLE_E_ADVISENOTSUPPORTED);
+            throw new COMException(nameof(OLE_E_ADVISENOTSUPPORTED), unchecked((int)OLE_E_ADVISENOTSUPPORTED));
         }
 
-        int IOleDataObject.EnumDAdvise(out IEnumSTATDATA enumAdvise)
+        unsafe void* Win32Com.IDataObject.EnumDAdvise()
         {
-            if (_wrapped is IOleDataObject ole)
-                return ole.EnumDAdvise(out enumAdvise);
+            if (_wrapped is Win32Com.IDataObject ole)
+                return ole.EnumDAdvise();
 
-            enumAdvise = null;
-            return OLE_E_ADVISENOTSUPPORTED;
+            return null;
         }
 
-        IEnumFORMATETC IOleDataObject.EnumFormatEtc(DATADIR direction)
+        Win32Com.IEnumFORMATETC Win32Com.IDataObject.EnumFormatEtc(int direction)
         {
-            if (_wrapped is IOleDataObject ole)
+            if (_wrapped is Win32Com.IDataObject ole)
                 return ole.EnumFormatEtc(direction);
-            if (direction == DATADIR.DATADIR_GET)
+            if ((DATADIR)direction == DATADIR.DATADIR_GET)
                 return new FormatEnumerator(_wrapped);
-            throw new NotSupportedException();
+            throw new COMException(nameof(UnmanagedMethods.HRESULT.E_NOTIMPL), unchecked((int)UnmanagedMethods.HRESULT.E_NOTIMPL));
         }
 
-        int IOleDataObject.GetCanonicalFormatEtc(ref FORMATETC formatIn, out FORMATETC formatOut)
+        unsafe FORMATETC Win32Com.IDataObject.GetCanonicalFormatEtc(FORMATETC* formatIn)
         {
-            if (_wrapped is IOleDataObject ole)
-                return ole.GetCanonicalFormatEtc(ref formatIn, out formatOut);
+            if (_wrapped is Win32Com.IDataObject ole)
+                return ole.GetCanonicalFormatEtc(formatIn);
 
-            formatOut = new FORMATETC();
-            formatOut.ptd = IntPtr.Zero;
-            return unchecked((int)UnmanagedMethods.HRESULT.E_NOTIMPL);
+            throw new COMException(nameof(UnmanagedMethods.HRESULT.E_NOTIMPL), unchecked((int)UnmanagedMethods.HRESULT.E_NOTIMPL));
         }
 
-        void IOleDataObject.GetData(ref FORMATETC format, out STGMEDIUM medium)
+        unsafe uint Win32Com.IDataObject.GetData(FORMATETC* format, Interop.STGMEDIUM* medium)
         {
-            if (_wrapped is IOleDataObject ole)
+            if (_wrapped is Win32Com.IDataObject ole)
             {
-                ole.GetData(ref format, out medium);
-                return;
-            }
-            if(!format.tymed.HasFlag(TYMED.TYMED_HGLOBAL))
-                Marshal.ThrowExceptionForHR(DV_E_TYMED);
-
-            if (format.dwAspect != DVASPECT.DVASPECT_CONTENT)
-                Marshal.ThrowExceptionForHR(DV_E_DVASPECT);
-
-            string fmt = ClipboardFormats.GetFormat(format.cfFormat);
-            if (string.IsNullOrEmpty(fmt) || !_wrapped.Contains(fmt))
-                Marshal.ThrowExceptionForHR(DV_E_FORMATETC);
-
-            medium = default(STGMEDIUM);
-            medium.tymed = TYMED.TYMED_HGLOBAL;
-            int result = WriteDataToHGlobal(fmt, ref medium.unionmember);
-            Marshal.ThrowExceptionForHR(result);
-        }
-
-        void IOleDataObject.GetDataHere(ref FORMATETC format, ref STGMEDIUM medium)
-        {
-            if (_wrapped is IOleDataObject ole)
-            {
-                ole.GetDataHere(ref format, ref medium);
-                return;
+                return ole.GetData(format, medium);
             }
 
-            if (medium.tymed != TYMED.TYMED_HGLOBAL || !format.tymed.HasFlag(TYMED.TYMED_HGLOBAL))
-                Marshal.ThrowExceptionForHR(DV_E_TYMED);
-
-            if (format.dwAspect != DVASPECT.DVASPECT_CONTENT)
-                Marshal.ThrowExceptionForHR(DV_E_DVASPECT);
-
-            string fmt = ClipboardFormats.GetFormat(format.cfFormat);
-            if (string.IsNullOrEmpty(fmt) || !_wrapped.Contains(fmt))
-                Marshal.ThrowExceptionForHR(DV_E_FORMATETC);
-
-            if (medium.unionmember == IntPtr.Zero)
-                Marshal.ThrowExceptionForHR(STG_E_MEDIUMFULL);
-
-            int result = WriteDataToHGlobal(fmt, ref medium.unionmember);
-            Marshal.ThrowExceptionForHR(result);
-        }
-
-        int IOleDataObject.QueryGetData(ref FORMATETC format)
-        {
-            if (_wrapped is IOleDataObject ole)
-                return ole.QueryGetData(ref format);
-            if (format.dwAspect != DVASPECT.DVASPECT_CONTENT)
-                return DV_E_DVASPECT;
-            if (!format.tymed.HasFlag(TYMED.TYMED_HGLOBAL))
+            if (!format->tymed.HasAllFlags(TYMED.TYMED_HGLOBAL))
                 return DV_E_TYMED;
 
-            string dataFormat = ClipboardFormats.GetFormat(format.cfFormat);
-            if (!string.IsNullOrEmpty(dataFormat) && _wrapped.Contains(dataFormat))
-                return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
-            return DV_E_FORMATETC;
-        }
-        
-        void IOleDataObject.SetData(ref FORMATETC formatIn, ref STGMEDIUM medium, bool release)
-        {
-            if (_wrapped is IOleDataObject ole)
-            {
-                ole.SetData(ref formatIn, ref medium, release);
-                return;
-            }
-            Marshal.ThrowExceptionForHR(unchecked((int)UnmanagedMethods.HRESULT.E_NOTIMPL));
+            if (format->dwAspect != DVASPECT.DVASPECT_CONTENT)
+                return DV_E_DVASPECT;
+
+            string fmt = ClipboardFormats.GetFormat(format->cfFormat);
+            if (string.IsNullOrEmpty(fmt) || !_wrapped.Contains(fmt))
+                return DV_E_FORMATETC;
+
+            * medium = default;
+            medium->tymed = TYMED.TYMED_HGLOBAL;
+            return WriteDataToHGlobal(fmt, ref medium->unionmember);
         }
 
-        private int WriteDataToHGlobal(string dataFormat, ref IntPtr hGlobal)
+        unsafe uint Win32Com.IDataObject.GetDataHere(FORMATETC* format, Interop.STGMEDIUM* medium)
         {
-            object data = _wrapped.Get(dataFormat);
+            if (_wrapped is Win32Com.IDataObject ole)
+            {
+                return ole.GetDataHere(format, medium);
+            }
+
+            if (medium->tymed != TYMED.TYMED_HGLOBAL || !format->tymed.HasAllFlags(TYMED.TYMED_HGLOBAL))
+                return DV_E_TYMED;
+
+            if (format->dwAspect != DVASPECT.DVASPECT_CONTENT)
+                return DV_E_DVASPECT;
+
+            string fmt = ClipboardFormats.GetFormat(format->cfFormat);
+            if (string.IsNullOrEmpty(fmt) || !_wrapped.Contains(fmt))
+                return DV_E_FORMATETC;
+
+            if (medium->unionmember == IntPtr.Zero)
+                return STG_E_MEDIUMFULL;
+
+            return WriteDataToHGlobal(fmt, ref medium->unionmember);
+        }
+
+        unsafe uint Win32Com.IDataObject.QueryGetData(FORMATETC* format)
+        {
+            if (_wrapped is Win32Com.IDataObject ole)
+            {
+                return ole.QueryGetData(format);
+            }
+
+            if (format->dwAspect != DVASPECT.DVASPECT_CONTENT)
+                return DV_E_DVASPECT;
+            if (!format->tymed.HasAllFlags(TYMED.TYMED_HGLOBAL))
+                return DV_E_TYMED;
+
+            var dataFormat = ClipboardFormats.GetFormat(format->cfFormat);
+
+            if (string.IsNullOrEmpty(dataFormat) || !_wrapped.Contains(dataFormat))
+                return DV_E_FORMATETC;
+
+            return 0;
+        }
+        
+        unsafe uint Win32Com.IDataObject.SetData(FORMATETC* pformatetc, Interop.STGMEDIUM* pmedium, int fRelease)
+        {
+            if (_wrapped is Win32Com.IDataObject ole)
+            {
+                return ole.SetData(pformatetc, pmedium, fRelease);
+            }
+            return (uint)UnmanagedMethods.HRESULT.E_NOTIMPL;
+        }
+
+        private uint WriteDataToHGlobal(string dataFormat, ref IntPtr hGlobal)
+        {
+            object data = _wrapped.Get(dataFormat)!;
             if (dataFormat == DataFormats.Text || data is string)
-                return WriteStringToHGlobal(ref hGlobal, Convert.ToString(data));
+                return WriteStringToHGlobal(ref hGlobal, Convert.ToString(data) ?? string.Empty);
+#pragma warning disable CS0618 // Type or member is obsolete
             if (dataFormat == DataFormats.FileNames && data is IEnumerable<string> files)
                 return WriteFileListToHGlobal(ref hGlobal, files);
+#pragma warning restore CS0618 // Type or member is obsolete
+            if (dataFormat == DataFormats.Files && data is IEnumerable<IStorageItem> items)
+                return WriteFileListToHGlobal(ref hGlobal, items.Select(f => f.TryGetLocalPath()).Where(f => f is not null)!);
             if (data is Stream stream)
             {
-                byte[] buffer = new byte[stream.Length - stream.Position];
-                stream.Read(buffer, 0, buffer.Length);
-                return WriteBytesToHGlobal(ref hGlobal, buffer);
+                var length = (int)(stream.Length - stream.Position);
+                var buffer = ArrayPool<byte>.Shared.Rent(length);
+
+                try
+                {
+                    stream.Read(buffer, 0, length);
+                    return WriteBytesToHGlobal(ref hGlobal, buffer.AsSpan(0, length));
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
             }
             if (data is IEnumerable<byte> bytes)
             {
-                var byteArr = bytes is byte[] ? (byte[])bytes : bytes.ToArray();
+                var byteArr = bytes as byte[] ?? bytes.ToArray();
                 return WriteBytesToHGlobal(ref hGlobal, byteArr);
             }
             return WriteBytesToHGlobal(ref hGlobal, SerializeObject(data));
         }
 
-        private byte[] SerializeObject(object data)
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "We still use BinaryFormatter for WinForms dragndrop compatability")]
+        private static byte[] SerializeObject(object data)
         {
             using (var ms = new MemoryStream())
             {
                 ms.Write(SerializedObjectGUID, 0, SerializedObjectGUID.Length);
-                BinaryFormatter binaryFormatter = new BinaryFormatter();
-                binaryFormatter.Serialize(ms, data);
+#pragma warning disable SYSLIB0011 // Type or member is obsolete
+                new BinaryFormatter().Serialize(ms, data);
+#pragma warning restore SYSLIB0011 // Type or member is obsolete
                 return ms.ToArray();
             }
         }
 
-        private int WriteBytesToHGlobal(ref IntPtr hGlobal, byte[] data)
+        private static unsafe uint WriteBytesToHGlobal(ref IntPtr hGlobal, ReadOnlySpan<byte> data)
         {
             int required = data.Length;
             if (hGlobal == IntPtr.Zero)
@@ -287,10 +304,12 @@ namespace Avalonia.Win32
             if (required > available)
                 return STG_E_MEDIUMFULL;
 
-            IntPtr ptr = UnmanagedMethods.GlobalLock(hGlobal);
+            var ptr = UnmanagedMethods.GlobalLock(hGlobal);
+            Debug.Assert(ptr == hGlobal);
+
             try
             {
-                Marshal.Copy(data, 0, ptr, data.Length);
+                data.CopyTo(new Span<byte>((void*)ptr, data.Length));
                 return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
             }
             finally
@@ -299,9 +318,9 @@ namespace Avalonia.Win32
             }
         }
 
-        private int WriteFileListToHGlobal(ref IntPtr hGlobal, IEnumerable<string> files)
+        private static uint WriteFileListToHGlobal(ref IntPtr hGlobal, IEnumerable<string> files)
         {
-            if (!files?.Any() ?? false)
+            if (!files.Any())
                 return unchecked((int)UnmanagedMethods.HRESULT.S_OK);
 
             char[] filesStr = (string.Join("\0", files) + "\0\0").ToCharArray();
@@ -331,7 +350,7 @@ namespace Avalonia.Win32
             }
         }
 
-        private int WriteStringToHGlobal(ref IntPtr hGlobal, string data)
+        private static uint WriteStringToHGlobal(ref IntPtr hGlobal, string data)
         {
             int required = (data.Length + 1) * sizeof(char);
             if (hGlobal == IntPtr.Zero)
@@ -354,6 +373,15 @@ namespace Avalonia.Win32
             }
         }
 
+        protected override void Destroyed()
+        {
+            ReleaseWrapped();
+        }
+
+        public void ReleaseWrapped()
+        {
+            _wrapped = null!;
+        }
         #endregion
     }
 }

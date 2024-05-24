@@ -1,14 +1,12 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using SharpDX.Direct2D1;
+using RenderTargetProperties = SharpDX.Direct2D1.RenderTargetProperties;
 
 namespace Avalonia.Direct2D1.Media
 {
-    public class WicRenderTargetBitmapImpl : WicBitmapImpl, IRenderTargetBitmapImpl
+    internal class WicRenderTargetBitmapImpl : WicBitmapImpl, IDrawingContextLayerImpl
     {
         private readonly WicRenderTarget _renderTarget;
 
@@ -37,16 +35,21 @@ namespace Avalonia.Direct2D1.Media
             base.Dispose();
         }
 
-        public virtual IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
-            => CreateDrawingContext(visualBrushRenderer, null);
+        public virtual IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing)
+            => CreateDrawingContext(useScaledDrawing, null);
 
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer, Action finishedCallback)
+        public bool IsCorrupted => false;
+
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing, Action finishedCallback)
         {
-            return new DrawingContextImpl(visualBrushRenderer, null, _renderTarget, finishedCallback: () =>
+            return new DrawingContextImpl(null, _renderTarget, useScaledDrawing, finishedCallback: () =>
                 {
                     Version++;
                     finishedCallback?.Invoke();
                 });
         }
+
+        public void Blit(IDrawingContextImpl context) => throw new NotSupportedException();
+        public bool CanBlit => false;
     }
 }

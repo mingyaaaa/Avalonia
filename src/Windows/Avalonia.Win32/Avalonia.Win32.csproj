@@ -1,11 +1,34 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks);netstandard2.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PackageId>Avalonia.Win32</PackageId>
+    <!-- We still keep BinaryFormatter for WinForms compatibility. -->
+    <EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\packages\Avalonia\Avalonia.csproj" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" />
   </ItemGroup>
-  <Import Project="$(MSBuildThisFileDirectory)\..\..\..\build\System.Drawing.Common.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\packages\Avalonia\Avalonia.csproj" />
+    <PackageReference Include="Avalonia.Angle.Windows.Natives" Version="2.1.22045.20230930" />
+    <PackageReference Include="MicroCom.CodeGenerator.MSBuild" Version="0.11.0" PrivateAssets="all" />
+    <MicroComIdl Include="WinRT\winrt.idl" CSharpInteropPath="WinRT\WinRT.Generated.cs" />
+    <MicroComIdl Include="Win32Com\win32.idl" CSharpInteropPath="Win32Com\Win32.Generated.cs" />
+    <MicroComIdl Include="DirectX\directx.idl" CSharpInteropPath="DirectX\directx.Generated.cs" />
+    <MicroComIdl Include="DComposition\dcomp.idl" CSharpInteropPath="DComposition\DComp.Generated.cs" />
+  </ItemGroup>
+  <Import Project="..\..\..\build\NullableEnable.props" />
+  <Import Project="..\..\..\build\DevAnalyzers.props" />
+  <Import Project="..\..\..\build\SourceGenerators.props" />
+  <ItemGroup>
+    <Compile Remove="..\..\Shared\SourceGeneratorAttributes.cs" />
+  </ItemGroup>
+  <Import Project="..\..\..\build\TrimmingEnable.props" />
+  <PropertyGroup Label="Warnings">
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Avalonia.Win32.Interoperability, PublicKey=$(AvaloniaPublicKey)" />
+    <InternalsVisibleTo Include="Avalonia.Direct2D1, PublicKey=$(AvaloniaPublicKey)" />
+  </ItemGroup>
 </Project>

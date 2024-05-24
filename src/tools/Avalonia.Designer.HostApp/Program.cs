@@ -1,12 +1,16 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
+using Avalonia.DesignerSupport;
+using Avalonia.Markup.Xaml;
 
 namespace Avalonia.Designer.HostApp
 {
+    [RequiresUnreferencedCode(XamlX.TrimmingMessages.DynamicXamlReference)]
     class Program
     {
-#if NET461
+#if NETFRAMEWORK
         private static string s_appDir;
         
         private static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
@@ -40,8 +44,9 @@ namespace Avalonia.Designer.HostApp
         public static void Main(string[] args)
 #endif
         {
+            AvaloniaLocator.CurrentMutable.Bind<AvaloniaXamlLoader.IRuntimeXamlLoader>()
+                .ToConstant(new DesignXamlLoader());
             Avalonia.DesignerSupport.Remote.RemoteDesignerEntryPoint.Main(args);
         }
-
     }
 }

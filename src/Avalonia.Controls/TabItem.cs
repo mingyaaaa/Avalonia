@@ -1,27 +1,33 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using System;
+using Avalonia.Automation;
+using Avalonia.Automation.Peers;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Mixins;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 
 namespace Avalonia.Controls
 {
     /// <summary>
-    /// An item in  a <see cref="TabStrip"/> or <see cref="TabControl"/>.
+    /// An item in a <see cref="TabControl"/>.
     /// </summary>
+    [PseudoClasses(":pressed", ":selected")]
     public class TabItem : HeaderedContentControl, ISelectable
     {
+        private Dock? _tabStripPlacement;
+
         /// <summary>
         /// Defines the <see cref="TabStripPlacement"/> property.
         /// </summary>
-        public static readonly StyledProperty<Dock> TabStripPlacementProperty =
-            TabControl.TabStripPlacementProperty.AddOwner<TabItem>();
+        public static readonly DirectProperty<TabItem, Dock?> TabStripPlacementProperty =
+            AvaloniaProperty.RegisterDirect<TabItem, Dock?>(nameof(TabStripPlacement), o => o.TabStripPlacement);
 
         /// <summary>
         /// Defines the <see cref="IsSelected"/> property.
         /// </summary>
         public static readonly StyledProperty<bool> IsSelectedProperty =
-            ListBoxItem.IsSelectedProperty.AddOwner<TabItem>();
+            SelectingItemsControl.IsSelectedProperty.AddOwner<TabItem>();
 
         /// <summary>
         /// Initializes static members of the <see cref="TabItem"/> class.
@@ -29,20 +35,20 @@ namespace Avalonia.Controls
         static TabItem()
         {
             SelectableMixin.Attach<TabItem>(IsSelectedProperty);
+            PressedMixin.Attach<TabItem>();
             FocusableProperty.OverrideDefaultValue(typeof(TabItem), true);
-            IsSelectedProperty.Changed.AddClassHandler<TabItem>(x => x.UpdateSelectedContent);
-            DataContextProperty.Changed.AddClassHandler<TabItem>(x => x.UpdateHeader);
+            DataContextProperty.Changed.AddClassHandler<TabItem>((x, e) => x.UpdateHeader(e));
+            AutomationProperties.ControlTypeOverrideProperty.OverrideDefaultValue<TabItem>(AutomationControlType.TabItem);
+            AccessKeyHandler.AccessKeyPressedEvent.AddClassHandler<TabItem>((tabItem, args) => tabItem.TabItemActivated(args));
         }
 
         /// <summary>
-        /// Gets the tab strip placement.
+        /// Gets the placement of this tab relative to the outer <see cref="TabControl"/>, if there is one.
         /// </summary>
-        /// <value>
-        /// The tab strip placement.
-        /// </value>
-        public Dock TabStripPlacement
+        public Dock? TabStripPlacement
         {
-            get { return GetValue(TabStripPlacementProperty); }
+            get => _tabStripPlacement;
+            internal set => SetAndRaise(TabStripPlacementProperty, ref _tabStripPlacement, value);
         }
 
         /// <summary>
@@ -50,11 +56,16 @@ namespace Avalonia.Controls
         /// </summary>
         public bool IsSelected
         {
-            get { return GetValue(IsSelectedProperty); }
-            set { SetValue(IsSelectedProperty, value); }
+            get => GetValue(IsSelectedProperty);
+            set => SetValue(IsSelectedProperty, value);
         }
 
-        internal TabControl ParentTabControl { get; set; }
+        protected override AutomationPeer OnCreateAutomationPeer() => new ListItemAutomationPeer(this);
+
+        [Obsolete("Owner manages its children properties by itself")]
+        protected void SubscribeToOwnerProperties(AvaloniaObject owner)
+        {
+        }
 
         private void UpdateHeader(AvaloniaPropertyChangedEventArgs obj)
         {
@@ -64,14 +75,14 @@ namespace Avalonia.Controls
                 {
                     if (Header != headered.Header)
                     {
-                        Header = headered.Header;
+                        SetCurrentValue(HeaderProperty, headered.Header);
                     }
                 }
                 else
                 {
-                    if (!(obj.NewValue is IControl))
+                    if (!(obj.NewValue is Control))
                     {
-                        Header = obj.NewValue;
+                        SetCurrentValue(HeaderProperty, obj.NewValue);
                     }
                 }
             }
@@ -79,27 +90,15 @@ namespace Avalonia.Controls
             {
                 if (Header == obj.OldValue)
                 {
-                    Header = obj.NewValue;
+                    SetCurrentValue(HeaderProperty, obj.NewValue);
                 }
-            }          
+            }
         }
 
-        private void UpdateSelectedContent(AvaloniaPropertyChangedEventArgs e)
+        private void TabItemActivated(RoutedEventArgs args)
         {
-            if (!IsSelected)
-            {
-                return;
-            }
-
-            if (ParentTabControl.SelectedContentTemplate != ContentTemplate)
-            {
-                ParentTabControl.SelectedContentTemplate = ContentTemplate;
-            }
-
-            if (ParentTabControl.SelectedContent != Content)
-            {
-                ParentTabControl.SelectedContent = Content;
-            }
+            SetCurrentValue(IsSelectedProperty, true);
+            args.Handled = true;
         }
     }
 }

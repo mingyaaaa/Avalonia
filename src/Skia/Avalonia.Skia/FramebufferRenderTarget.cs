@@ -1,11 +1,8 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using System.Reactive.Disposables;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using Avalonia.Reactive;
 using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Platform;
-using Avalonia.Rendering;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -13,14 +10,16 @@ namespace Avalonia.Skia
     /// <summary>
     /// Skia render target that renders to a framebuffer surface. No gpu acceleration available.
     /// </summary>
-    internal class FramebufferRenderTarget : IRenderTarget
+    internal class FramebufferRenderTarget : IRenderTargetWithProperties
     {
-        private readonly IFramebufferPlatformSurface _platformSurface;
         private SKImageInfo _currentImageInfo;
         private IntPtr _currentFramebufferAddress;
-        private SKSurface _framebufferSurface;
-        private PixelFormatConversionShim _conversionShim;
-        private IDisposable _preFramebufferCopyHandler;
+        private SKSurface? _framebufferSurface;
+        private PixelFormatConversionShim? _conversionShim;
+        private IDisposable? _preFramebufferCopyHandler;
+        private IFramebufferRenderTarget? _renderTarget;
+        private IFramebufferRenderTargetWithProperties? _renderTargetWithProperties;
+        private bool _hadConversionShim;
 
         /// <summary>
         /// Create new framebuffer render target using a target surface.
@@ -28,24 +27,45 @@ namespace Avalonia.Skia
         /// <param name="platformSurface">Target surface.</param>
         public FramebufferRenderTarget(IFramebufferPlatformSurface platformSurface)
         {
-            _platformSurface = platformSurface;
+            _renderTarget = platformSurface.CreateFramebufferRenderTarget();
+            _renderTargetWithProperties = _renderTarget as IFramebufferRenderTargetWithProperties;
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
+            _renderTarget?.Dispose();
+            _renderTarget = null;
+            _renderTargetWithProperties = null;
             FreeSurface();
         }
 
-        /// <inheritdoc />
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        public RenderTargetProperties Properties => new()
         {
-            var framebuffer = _platformSurface.Lock();
+            RetainsPreviousFrameContents = !_hadConversionShim
+                                           && _renderTargetWithProperties?.RetainsFrameContents == true,
+            IsSuitableForDirectRendering = true
+        };
+
+
+        /// <inheritdoc />
+        public IDrawingContextImpl CreateDrawingContext(bool scaleDrawingToDpi) =>
+            CreateDrawingContext(scaleDrawingToDpi, out _);
+
+        /// <inheritdoc />
+        public IDrawingContextImpl CreateDrawingContext(bool useScaledDrawing, out RenderTargetDrawingContextProperties properties)
+        {
+            if (_renderTarget == null)
+                throw new ObjectDisposedException(nameof(FramebufferRenderTarget));
+
+            FramebufferLockProperties lockProperties = default;
+            var framebuffer = _renderTargetWithProperties?.Lock(out lockProperties) ?? _renderTarget.Lock();
             var framebufferImageInfo = new SKImageInfo(framebuffer.Size.Width, framebuffer.Size.Height,
                 framebuffer.Format.ToSkColorType(),
                 framebuffer.Format == PixelFormat.Rgb565 ? SKAlphaType.Opaque : SKAlphaType.Premul);
 
             CreateSurface(framebufferImageInfo, framebuffer);
+            _hadConversionShim |= _conversionShim != null;
 
             var canvas = _framebufferSurface.Canvas;
 
@@ -55,14 +75,20 @@ namespace Avalonia.Skia
 
             var createInfo = new DrawingContextImpl.CreateInfo
             {
-                Canvas = canvas,
+                Surface = _framebufferSurface,
                 Dpi = framebuffer.Dpi,
-                VisualBrushRenderer = visualBrushRenderer,
-                DisableTextLcdRendering = true
+                ScaleDrawingToDpi = useScaledDrawing
             };
 
+            properties = new()
+            {
+                PreviousFrameIsRetained = !_hadConversionShim && lockProperties.PreviousFrameIsRetained
+            };
+            
             return new DrawingContextImpl(createInfo, _preFramebufferCopyHandler, canvas, framebuffer);
         }
+
+        public bool IsCorrupted => false;
 
         /// <summary>
         /// Check if two images info are compatible.
@@ -82,6 +108,7 @@ namespace Avalonia.Skia
         /// </summary>
         /// <param name="desiredImageInfo">Desired image info.</param>
         /// <param name="framebuffer">Backing framebuffer.</param>
+        [MemberNotNull(nameof(_framebufferSurface))]
         private void CreateSurface(SKImageInfo desiredImageInfo, ILockedFramebuffer framebuffer)
         {
             if (_framebufferSurface != null && AreImageInfosCompatible(_currentImageInfo, desiredImageInfo) && _currentFramebufferAddress == framebuffer.Address)
@@ -93,7 +120,8 @@ namespace Avalonia.Skia
             
             _currentFramebufferAddress = framebuffer.Address;
 
-            var surface = SKSurface.Create(desiredImageInfo, _currentFramebufferAddress, framebuffer.RowBytes);
+            var surface = SKSurface.Create(desiredImageInfo, _currentFramebufferAddress, 
+                framebuffer.RowBytes, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
 
             // If surface cannot be created - try to create a compatibility shim first
             if (surface == null)
@@ -151,7 +179,7 @@ namespace Avalonia.Skia
                         $"Unable to create pixel format shim for conversion from {bitmapColorType} to {destinationInfo.ColorType}");
                 }
 
-                Surface = SKSurface.Create(_bitmap.Info, _bitmap.GetPixels(), _bitmap.RowBytes);
+                Surface = SKSurface.Create(_bitmap.Info, _bitmap.GetPixels(), _bitmap.RowBytes, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
 
                 if (Surface == null)
                 {

@@ -1,32 +1,28 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Data.Core;
-using Avalonia.Markup.Data;
 using Avalonia.Markup.Parsers;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Metadata;
 
 namespace Avalonia.Markup.Xaml.Templates
 {
-    public class TreeDataTemplate : ITreeDataTemplate
+    public class TreeDataTemplate : ITreeDataTemplate, ITypedDataTemplate
     {
-        public Type DataType { get; set; }
+        [DataType]
+        public Type? DataType { get; set; }
 
         [Content]
         [TemplateContent]
-        public object Content { get; set; }
+        public object? Content { get; set; }
 
         [AssignBinding]
-        public Binding ItemsSource { get; set; }
+        public BindingBase? ItemsSource { get; set; }
 
-        public bool SupportsRecycling { get; set; } = true;
-
-        public bool Match(object data)
+        public bool Match(object? data)
         {
             if (DataType == null)
             {
@@ -34,25 +30,36 @@ namespace Avalonia.Markup.Xaml.Templates
             }
             else
             {
-                return DataType.GetTypeInfo().IsAssignableFrom(data.GetType().GetTypeInfo());
+                return DataType.IsInstanceOfType(data);
             }
         }
 
-        public InstancedBinding ItemsSelector(object item)
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "If ItemsSource is a CompiledBinding, then path members will be preserved")]
+        public InstancedBinding? ItemsSelector(object item)
         {
             if (ItemsSource != null)
             {
-                var obs = ExpressionObserverBuilder.Build(item, ItemsSource.Path);
-                return InstancedBinding.OneWay(obs, BindingPriority.Style);
+                var expression = ItemsSource switch
+                {
+                    Binding reflection => reflection.CreateObservableForTreeDataTemplate(item),
+                    CompiledBindingExtension compiled => compiled.CreateObservableForTreeDataTemplate(item),
+                    _ => throw new InvalidOperationException("TreeDataTemplate currently only supports Binding and CompiledBindingExtension!")
+                };
+
+                return new InstancedBinding(null, expression, BindingMode.OneWay, BindingPriority.Style);
             }
 
             return null;
         }
 
-        public IControl Build(object data)
+        public Control? Build(object? data)
         {
-            var visualTreeForItem = TemplateContent.Load(Content);
-            visualTreeForItem.DataContext = data;
+            var visualTreeForItem = TemplateContent.Load(Content)?.Result;
+            if (visualTreeForItem != null)
+            {
+                visualTreeForItem.DataContext = data;
+            }
+
             return visualTreeForItem;
         }
     }

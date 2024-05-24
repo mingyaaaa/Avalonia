@@ -1,73 +1,99 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Threading;
 using Microsoft.Build.Framework;
 
 namespace Avalonia.Build.Tasks
 {
     public class CompileAvaloniaXamlTask: ITask
     {
+        public const string AvaloniaCompileOutputMetadataName = "AvaloniaCompileOutput";
+
         public bool Execute()
         {
-            OutputPath = OutputPath ?? AssemblyFile;
-            var outputPdb = GetPdbPath(OutputPath);
-            var input = AssemblyFile;
-            var inputPdb = GetPdbPath(input);
-            // Make a copy and delete the original file to prevent MSBuild from thinking that everything is OK 
-            if (OriginalCopyPath != null)
-            {
-                File.Copy(AssemblyFile, OriginalCopyPath, true);
-                input = OriginalCopyPath;
-                File.Delete(AssemblyFile);
+            Enum.TryParse(ReportImportance, true, out MessageImportance outputImportance);
 
-                if (File.Exists(inputPdb))
+            var outputPath = AssemblyFile.GetMetadata(AvaloniaCompileOutputMetadataName);
+            var refOutputPath = RefAssemblyFile?.GetMetadata(AvaloniaCompileOutputMetadataName);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+            if (!string.IsNullOrEmpty(refOutputPath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(refOutputPath));
+            }
+
+            var msg = $"CompileAvaloniaXamlTask -> AssemblyFile:{AssemblyFile}, ProjectDirectory:{ProjectDirectory}, OutputPath:{outputPath}";
+            BuildEngine.LogMessage(msg, outputImportance < MessageImportance.Low ? MessageImportance.High : outputImportance);
+
+            var res = XamlCompilerTaskExecutor.Compile(BuildEngine,
+                AssemblyFile.ItemSpec, outputPath,
+                RefAssemblyFile?.ItemSpec, refOutputPath,
+                References?.Select(i => i.ItemSpec).ToArray() ?? Array.Empty<string>(),
+                ProjectDirectory, VerifyIl, DefaultCompileBindings, outputImportance,
+                new XamlCompilerDiagnosticsFilter(AnalyzerConfigFiles),
+                (SignAssembly && !DelaySign) ? AssemblyOriginatorKeyFile : null,
+                SkipXamlCompilation, DebuggerLaunch, VerboseExceptions);
+
+            if (res.Success && !res.WrittenFile)
+            {
+                // To simplify incremental build checks, copy the input files to the expected output locations even if the Xaml compiler didn't do anything.
+                CopyAndTouch(AssemblyFile.ItemSpec, outputPath);
+                CopyAndTouch(Path.ChangeExtension(AssemblyFile.ItemSpec, ".pdb"), Path.ChangeExtension(outputPath, ".pdb"), false);
+
+                if (!string.IsNullOrEmpty(refOutputPath))
                 {
-                    var copyPdb = GetPdbPath(OriginalCopyPath);
-                    File.Copy(inputPdb, copyPdb, true);
-                    File.Delete(inputPdb);
-                    inputPdb = copyPdb;
+                    CopyAndTouch(RefAssemblyFile.ItemSpec, refOutputPath);
                 }
             }
 
-            var res = XamlCompilerTaskExecutor.Compile(BuildEngine, input,
-                File.ReadAllLines(ReferencesFilePath).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray(),
-                ProjectDirectory, OutputPath);
-            if (!res.Success)
-                return false;
-            if (!res.WrittenFile)
-            {
-                File.Copy(input, OutputPath, true);
-                if(File.Exists(inputPdb))
-                    File.Copy(inputPdb, outputPdb, true);
-            }
-            return true;
+            return res.Success;
         }
 
-        string GetPdbPath(string p)
+        private static void CopyAndTouch(string source, string destination, bool shouldExist = true)
         {
-            var d = Path.GetDirectoryName(p);
-            var f = Path.GetFileNameWithoutExtension(p);
-            var rv = f + ".pdb";
-            if (d != null)
-                rv = Path.Combine(d, rv);
-            return rv;
+            if (!File.Exists(source))
+            {
+                if (shouldExist)
+                {
+                    throw new FileNotFoundException($"Could not copy file '{source}'. File does not exist.");
+                }
+
+                return;
+            }
+
+            File.Copy(source, destination, overwrite: true);
+            File.SetLastWriteTimeUtc(destination, DateTime.UtcNow);
         }
-        
-        [Required]
-        public string AssemblyFile { get; set; }
-        [Required]
-        public string ReferencesFilePath { get; set; }
-        [Required]
-        public string OriginalCopyPath { get; set; }
+
         [Required]
         public string ProjectDirectory { get; set; }
-        
-        public string OutputPath { get; set; }
-        
+
+        [Required]
+        public ITaskItem AssemblyFile { get; set; }
+
+        public ITaskItem? RefAssemblyFile { get; set; }
+
+        public ITaskItem[]? References { get; set; }
+
+        public bool VerifyIl { get; set; }
+
+        public bool DefaultCompileBindings { get; set; }
+
+        public bool SkipXamlCompilation { get; set; }
+
+        public string AssemblyOriginatorKeyFile { get; set; }
+        public bool SignAssembly { get; set; }
+        public bool DelaySign { get; set; }
+
+        public string ReportImportance { get; set; }
+
         public IBuildEngine BuildEngine { get; set; }
         public ITaskHost HostObject { get; set; }
+
+        public bool DebuggerLaunch { get; set; }
+
+        public bool VerboseExceptions { get; set; }
+
+        public ITaskItem[] AnalyzerConfigFiles { get; set; }
     }
 }

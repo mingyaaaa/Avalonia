@@ -1,12 +1,11 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+﻿using Avalonia.Metadata;
 
 namespace Avalonia.Controls.Templates
 {
     /// <summary>
     /// Defines an element that has a <see cref="DataTemplates"/> collection.
     /// </summary>
+    [NotClientImplementable]
     public interface IDataTemplateHost
     {
         /// <summary>

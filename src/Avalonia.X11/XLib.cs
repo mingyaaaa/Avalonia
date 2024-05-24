@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using Avalonia.Platform.Interop;
 
 // ReSharper disable MemberCanBePrivate.Global
 // ReSharper disable FieldCanBeMadeReadOnly.Global
@@ -15,10 +16,11 @@ namespace Avalonia.X11
 {
     internal unsafe static class XLib
     {
-        const string libX11 = "libX11.so.6";
-        const string libX11Randr = "libXrandr.so.2";
-        const string libX11Ext = "libXext.so.6";
-        const string libXInput = "libXi.so.6";
+        private const string libX11 = "libX11.so.6";
+        private const string libX11Randr = "libXrandr.so.2";
+        private const string libX11Ext = "libXext.so.6";
+        private const string libXInput = "libXi.so.6";
+        private const string libXCursor = "libXcursor.so.1";
 
         [DllImport(libX11)]
         public static extern IntPtr XOpenDisplay(IntPtr display);
@@ -57,6 +59,9 @@ namespace Avalonia.X11
 
         [DllImport(libX11)]
         public static extern IntPtr XNextEvent(IntPtr display, out XEvent xevent);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XNextEvent(IntPtr display, XEvent* xevent);
 
         [DllImport(libX11)]
         public static extern int XConnectionNumber(IntPtr diplay);
@@ -104,6 +109,9 @@ namespace Avalonia.X11
 
         [DllImport(libX11)]
         public static extern int XFree(IntPtr data);
+        
+        [DllImport(libX11)]
+        public static extern int XFree(void* data);
 
         [DllImport(libX11)]
         public static extern int XRaiseWindow(IntPtr display, IntPtr window);
@@ -238,6 +246,10 @@ namespace Avalonia.X11
 
         [DllImport(libX11)]
         public static extern int XChangeProperty(IntPtr display, IntPtr window, IntPtr property, IntPtr type,
+            int format, PropertyMode mode, byte[] data, int nelements);
+        
+        [DllImport(libX11)]
+        public static extern int XChangeProperty(IntPtr display, IntPtr window, IntPtr property, IntPtr type,
             int format, PropertyMode mode, uint[] data, int nelements);
 
         [DllImport(libX11)]
@@ -364,6 +376,9 @@ namespace Avalonia.X11
         public static extern void XSetWMHints(IntPtr display, IntPtr window, ref XWMHints wmhints);
 
         [DllImport(libX11)]
+        public static extern IntPtr XGetWMHints(IntPtr display, IntPtr window);
+
+        [DllImport(libX11)]
         public static extern int XGetIconSizes(IntPtr display, IntPtr window, out IntPtr size_list, out int count);
 
         [DllImport(libX11)]
@@ -403,6 +418,9 @@ namespace Avalonia.X11
 
         [DllImport(libX11)]
         public static extern bool XFilterEvent(ref XEvent xevent, IntPtr window);
+        
+        [DllImport(libX11)]
+        public static extern bool XFilterEvent(XEvent* xevent, IntPtr window);
 
         [DllImport(libX11)]
         public static extern void XkbSetDetectableAutoRepeat(IntPtr display, bool detectable, IntPtr supported);
@@ -437,9 +455,9 @@ namespace Avalonia.X11
         [DllImport(libX11)]
         public static extern IntPtr XCreateColormap(IntPtr display, IntPtr window, IntPtr visual, int create);
         
-        public enum XLookupStatus
+        public enum XLookupStatus : uint
         {
-            XBufferOverflow = -1,
+            XBufferOverflow = 0xffffffffu,
             XLookupNone = 1,
             XLookupChars = 2,
             XLookupKeySym = 3,
@@ -447,25 +465,80 @@ namespace Avalonia.X11
         }
         
         [DllImport (libX11)]
-        public static extern unsafe int XLookupString(ref XEvent xevent, void* buffer, int num_bytes, out IntPtr keysym, out IntPtr status);
+        public static extern int XLookupString(ref XKeyEvent xevent, byte* buffer, int num_bytes, out nint keysym, IntPtr composeStatus);
         
         [DllImport (libX11)]
-        public static extern unsafe int Xutf8LookupString(IntPtr xic, ref XEvent xevent, void* buffer, int num_bytes, out IntPtr keysym, out IntPtr status);
+        public static extern int Xutf8LookupString(IntPtr xic, ref XKeyEvent xevent, byte* buffer, int num_bytes, out nint keysym, out XLookupStatus status);
+
+        [DllImport (libX11)]
+        public static extern byte* XKeysymToString(nint keysym);
+
+        [DllImport (libX11)]
+        public static extern bool XkbLibraryVersion(ref int libMajor, ref int libMinor);
+
+        [DllImport (libX11)]
+        public static extern bool XkbQueryExtension(IntPtr display, out int *opcode, out int eventBase, out int *errorBase, ref int major, ref int minor);
+
+        [DllImport (libX11)]
+        public static extern bool XkbIgnoreExtension(bool ignore);
+
+        [DllImport (libX11)]
+        public static extern bool XkbLookupKeySym(IntPtr display, int keycode, int modifiers, out XModifierMask consumedModifiers, out nint keysym);
+
+        [DllImport (libX11)]
+        public static extern int XkbTranslateKeySym(IntPtr display, ref nint keySym, int modifiers, byte* buffer, int bufferSize, out int extraSize);
         
         [DllImport (libX11)]
-        public static extern unsafe IntPtr XKeycodeToKeysym(IntPtr display, int keycode, int index);
-        
-        [DllImport (libX11)]
-        public static extern unsafe IntPtr XSetLocaleModifiers(string modifiers);
+        public static extern IntPtr XSetLocaleModifiers(string modifiers);
 
         [DllImport (libX11)]
         public static extern IntPtr XOpenIM (IntPtr display, IntPtr rdb, IntPtr res_name, IntPtr res_class);
-
-        [DllImport (libX11)]
-        public static extern IntPtr XCreateIC (IntPtr xim, string name, XIMProperties im_style, string name2, IntPtr value2, IntPtr terminator);
         
         [DllImport (libX11)]
-        public static extern IntPtr XCreateIC (IntPtr xim, string name, XIMProperties im_style, string name2, IntPtr value2, string name3, IntPtr value3, IntPtr terminator);
+        public static extern IntPtr XGetIMValues (IntPtr xim, string name, out XIMStyles* value, IntPtr terminator);
+        
+        [DllImport (libX11)]
+        public static extern IntPtr XCreateIC (IntPtr xim, string name, IntPtr value, string name2, IntPtr value2, string name3, IntPtr value3, IntPtr terminator);
+
+        [DllImport(libX11)]
+        public static extern IntPtr XCreateIC(IntPtr xim, string name, IntPtr value, string name2, IntPtr value2,
+            string name3, IntPtr value3, string name4, IntPtr value4, IntPtr terminator);
+
+        [DllImport(libX11)]
+        public static extern IntPtr XCreateIC(IntPtr xim, string xnClientWindow, IntPtr handle, 
+            string xnInputStyle, IntPtr value3, string xnResourceName, string optionsWmClass,
+            string xnResourceClass, string wmClass, string xnPreeditAttributes, IntPtr list, IntPtr zero);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XCreateIC(IntPtr xim, string xnClientWindow, IntPtr handle, string xnFocusWindow,
+            IntPtr value2, string xnInputStyle, IntPtr value3, string xnResourceName, string optionsWmClass,
+            string xnResourceClass, string wmClass, string xnPreeditAttributes, IntPtr list, IntPtr zero);
+
+        [DllImport(libX11)]
+        public static extern void XSetICFocus(IntPtr xic);
+        
+        [DllImport(libX11)]
+        public static extern void XUnsetICFocus(IntPtr xic);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XmbResetIC(IntPtr xic);
+
+        [DllImport(libX11)]
+        public static extern IntPtr XVaCreateNestedList(int unused, Utf8Buffer name, ref XPoint point, IntPtr terminator);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XVaCreateNestedList(int unused, Utf8Buffer xnArea, XRectangle* point,
+            Utf8Buffer xnSpotLocation, XPoint* value2, Utf8Buffer xnFontSet, IntPtr fs, IntPtr zero);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XVaCreateNestedList(int unused,
+            Utf8Buffer xnSpotLocation, XPoint* value2, Utf8Buffer xnFontSet, IntPtr fs, IntPtr zero);
+        
+        [DllImport (libX11)]
+        public static extern IntPtr XCreateFontSet (IntPtr display, string name, out IntPtr list, out int count, IntPtr unused);
+        
+        [DllImport(libX11)]
+        public static extern IntPtr XSetICValues(IntPtr ic, string name, IntPtr data, IntPtr terminator);
         
         [DllImport (libX11)]
         public static extern void XCloseIM (IntPtr xim);
@@ -487,6 +560,18 @@ namespace Avalonia.X11
         public static extern int XRRQueryExtension (IntPtr dpy,
             out int event_base_return,
             out int error_base_return);
+        
+        [DllImport(libX11Ext)]
+        public static extern Status XSyncInitialize(IntPtr dpy, out int event_base_return, out int error_base_return);
+
+        [DllImport(libX11Ext)]
+        public static extern IntPtr XSyncCreateCounter(IntPtr dpy, XSyncValue initialValue);
+        
+        [DllImport(libX11Ext)]
+        public static extern int XSyncDestroyCounter(IntPtr dpy, IntPtr counter);
+        
+        [DllImport(libX11Ext)]
+        public static extern int XSyncSetCounter(IntPtr dpy, IntPtr counter, XSyncValue value);
 
         [DllImport(libX11Randr)]
         public static extern int XRRQueryVersion(IntPtr dpy,
@@ -496,6 +581,13 @@ namespace Avalonia.X11
         [DllImport(libX11Randr)]
         public static extern XRRMonitorInfo*
             XRRGetMonitors(IntPtr dpy, IntPtr window, bool get_active, out int nmonitors);
+
+        [DllImport(libX11Randr)]
+        public static extern IntPtr* XRRListOutputProperties(IntPtr dpy, IntPtr output, out int count);
+
+        [DllImport(libX11Randr)]
+        public static extern int XRRGetOutputProperty(IntPtr dpy, IntPtr output, IntPtr atom, int offset, int length, bool _delete, bool pending, IntPtr req_type, out IntPtr actual_type, out int actual_format, out int nitems, out long bytes_after, out IntPtr prop);
+            
         [DllImport(libX11Randr)]
         public static extern void XRRSelectInput(IntPtr dpy, IntPtr window, RandrEventMask mask);
 
@@ -507,6 +599,9 @@ namespace Avalonia.X11
 
         [DllImport(libXInput)]
         public static extern void XIFreeDeviceInfo(XIDeviceInfo* info);
+
+        [DllImport(libXCursor)]
+        public static extern IntPtr XcursorImageLoadCursor(IntPtr display, IntPtr image);
 
         public static void XISetMask(ref int mask, XiEventType ev)
         {
@@ -548,6 +643,12 @@ namespace Avalonia.X11
             return XISelectEvents(display, window, emasks, devices.Count);
 
         }
+        
+        [DllImport(libX11)]
+        public static extern XClassHint* XAllocClassHint();
+
+        [DllImport(libX11)]
+        public static extern int XSetClassHint(IntPtr display, IntPtr window, XClassHint* class_hints);
 
         public struct XGeometry
         {
@@ -558,6 +659,16 @@ namespace Avalonia.X11
             public int height;
             public int bw;
             public int d;
+        }
+        public struct XClassHint
+        {
+            public byte* res_name;
+            public byte* res_class;
+        }
+        
+        public struct XSyncValue {
+            public int Hi;
+            public uint Lo;
         }
 
         public static bool XGetGeometry(IntPtr display, IntPtr window, out XGeometry geo)
@@ -622,7 +733,7 @@ namespace Avalonia.X11
             }
         }
 
-        public static IntPtr CreateEventWindow(AvaloniaX11Platform plat, Action<XEvent> handler)
+        public static IntPtr CreateEventWindow(AvaloniaX11Platform plat, X11PlatformThreading.EventHandler handler)
         {
             var win = XCreateSimpleWindow(plat.Display, plat.Info.DefaultRootWindow, 
                 0, 0, 1, 1, 0, IntPtr.Zero, IntPtr.Zero);
@@ -630,6 +741,10 @@ namespace Avalonia.X11
             return win;
         }
 
+        public static int XkbGetGroupForCoreState(int state)
+            => (state >> 13) & 0x3;
 
+        public static int XkbSetGroupForCoreState(int state, int newGroup)
+            => (state & ~(0x3 << 13)) | ((newGroup & 0x3) << 13);
     }
 }

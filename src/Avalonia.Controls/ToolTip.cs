@@ -1,9 +1,10 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
-using System.Reactive.Linq;
+using System.ComponentModel;
+using Avalonia.Controls.Diagnostics;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Primitives;
+using Avalonia.Reactive;
+using Avalonia.Styling;
 
 namespace Avalonia.Controls
 {
@@ -16,13 +17,14 @@ namespace Avalonia.Controls
     /// To add a tooltip to a control, use the <see cref="TipProperty"/> attached property,
     /// assigning the content that you want displayed.
     /// </remarks>
-    public class ToolTip : ContentControl
+    [PseudoClasses(":open")]
+    public class ToolTip : ContentControl, IPopupHostProvider
     {
         /// <summary>
         /// Defines the ToolTip.Tip attached property.
         /// </summary>
-        public static readonly AttachedProperty<object> TipProperty =
-            AvaloniaProperty.RegisterAttached<ToolTip, Control, object>("Tip");
+        public static readonly AttachedProperty<object?> TipProperty =
+            AvaloniaProperty.RegisterAttached<ToolTip, Control, object?>("Tip");
 
         /// <summary>
         /// Defines the ToolTip.IsOpen attached property.
@@ -55,21 +57,43 @@ namespace Avalonia.Controls
             AvaloniaProperty.RegisterAttached<ToolTip, Control, int>("ShowDelay", 400);
 
         /// <summary>
+        /// Defines the ToolTip.BetweenShowDelay property.
+        /// </summary>
+        public static readonly AttachedProperty<int> BetweenShowDelayProperty =
+            AvaloniaProperty.RegisterAttached<ToolTip, Control, int>("BetweenShowDelay", 100);
+
+        /// <summary>
+        /// Defines the ToolTip.ShowOnDisabled property.
+        /// </summary>
+        public static readonly AttachedProperty<bool> ShowOnDisabledProperty =
+            AvaloniaProperty.RegisterAttached<ToolTip, Control, bool>("ShowOnDisabled", defaultValue: false, inherits: true);
+
+        /// <summary>
+        /// Defines the ToolTip.ServiceEnabled property.
+        /// </summary>
+        public static readonly AttachedProperty<bool> ServiceEnabledProperty =
+            AvaloniaProperty.RegisterAttached<ToolTip, Control, bool>("ServiceEnabled", defaultValue: true, inherits: true);
+
+        /// <summary>
         /// Stores the current <see cref="ToolTip"/> instance in the control.
         /// </summary>
-        private static readonly AttachedProperty<ToolTip> ToolTipProperty =
-            AvaloniaProperty.RegisterAttached<ToolTip, Control, ToolTip>("ToolTip");
+        internal static readonly AttachedProperty<ToolTip?> ToolTipProperty =
+            AvaloniaProperty.RegisterAttached<ToolTip, Control, ToolTip?>("ToolTip");
 
-        private PopupRoot _popup;
+        private Popup? _popup;
+        private Action<IPopupHost?>? _popupHostChangedHandler;
+        private CompositeDisposable? _subscriptions;
 
         /// <summary>
         /// Initializes static members of the <see cref="ToolTip"/> class.
         /// </summary>
         static ToolTip()
         {
-            TipProperty.Changed.Subscribe(ToolTipService.Instance.TipChanged);
             IsOpenProperty.Changed.Subscribe(IsOpenChanged);
         }
+
+        internal Control? AdornedControl { get; private set; }
+        internal event EventHandler? Closed;
 
         /// <summary>
         /// Gets the value of the ToolTip.Tip attached property.
@@ -78,7 +102,7 @@ namespace Avalonia.Controls
         /// <returns>
         /// The content to be displayed in the control's tooltip.
         /// </returns>
-        public static object GetTip(Control element)
+        public static object? GetTip(Control element)
         {
             return element.GetValue(TipProperty);
         }
@@ -88,7 +112,7 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="element">The control to get the property from.</param>
         /// <param name="value">The content to be displayed in the control's tooltip.</param>
-        public static void SetTip(Control element, object value)
+        public static void SetTip(Control element, object? value)
         {
             element.SetValue(TipProperty, value);
         }
@@ -203,11 +227,60 @@ namespace Avalonia.Controls
             element.SetValue(ShowDelayProperty, value);
         }
 
+        /// <summary>
+        /// Gets the number of milliseconds since the last tooltip closed during which the tooltip of <paramref name="element"/> will open immediately,
+        /// or a negative value indicating that the tooltip will always wait for <see cref="ShowDelayProperty"/> before opening.
+        /// </summary>
+        /// <param name="element">The control to get the property from.</param>
+        public static int GetBetweenShowDelay(Control element) => element.GetValue(BetweenShowDelayProperty);
+
+        /// <summary>
+        /// Sets the number of milliseconds since the last tooltip closed during which the tooltip of <paramref name="element"/> will open immediately.
+        /// </summary>
+        /// <remarks>
+        /// Setting a negative value disables the immediate opening behaviour. The tooltip of <paramref name="element"/> will then always wait until 
+        /// <see cref="ShowDelayProperty"/> elapses before showing.
+        /// </remarks>
+        /// <param name="element">The control to get the property from.</param>
+        /// <param name="value">The number of milliseconds to set, or a negative value to disable the behaviour.</param>
+        public static void SetBetweenShowDelay(Control element, int value) => element.SetValue(BetweenShowDelayProperty, value);
+
+        /// <summary>
+        /// Gets whether a control will display a tooltip even if it disabled.
+        /// </summary>
+        /// <param name="element">The control to get the property from.</param>
+        public static bool GetShowOnDisabled(Control element) =>
+            element.GetValue(ShowOnDisabledProperty);
+
+        /// <summary>
+        /// Sets whether a control will display a tooltip even if it disabled.
+        /// </summary>
+        /// <param name="element">The control to get the property from.</param>
+        /// <param name="value">Whether the control is to display a tooltip even if it disabled.</param>
+        public static void SetShowOnDisabled(Control element, bool value) => 
+            element.SetValue(ShowOnDisabledProperty, value);
+
+        /// <summary>
+        /// Gets whether showing and hiding of a control's tooltip will be automatically controlled by Avalonia.
+        /// </summary>
+        /// <param name="element">The control to get the property from.</param>
+        public static bool GetServiceEnabled(Control element) =>
+            element.GetValue(ServiceEnabledProperty);
+
+        /// <summary>
+        /// Sets whether showing and hiding of a control's tooltip will be automatically controlled by Avalonia.
+        /// </summary>
+        /// <param name="element">The control to get the property from.</param>
+        /// <param name="value">Whether the control is to display a tooltip even if it disabled.</param>
+        public static void SetServiceEnabled(Control element, bool value) => 
+            element.SetValue(ServiceEnabledProperty, value);
+
         private static void IsOpenChanged(AvaloniaPropertyChangedEventArgs e)
         {
             var control = (Control)e.Sender;
+            var newValue = (bool)e.NewValue!;
 
-            if ((bool)e.NewValue)
+            if (newValue)
             {
                 var tip = GetTip(control);
                 if (tip == null) return;
@@ -219,37 +292,91 @@ namespace Avalonia.Controls
 
                     toolTip = tip as ToolTip ?? new ToolTip { Content = tip };
                     control.SetValue(ToolTipProperty, toolTip);
+                    toolTip.SetValue(ThemeVariant.RequestedThemeVariantProperty, control.ActualThemeVariant);
                 }
 
+                toolTip.AdornedControl = control;
                 toolTip.Open(control);
+                toolTip?.UpdatePseudoClasses(newValue);
             }
-            else
+            else if (control.GetValue(ToolTipProperty) is { } toolTip)
             {
-                var toolTip = control.GetValue(ToolTipProperty);
-                toolTip?.Close();
+                toolTip.AdornedControl = null;
+                toolTip.Close();
+                toolTip?.UpdatePseudoClasses(newValue);
             }
+        }
+
+        IPopupHost? IPopupHostProvider.PopupHost => _popup?.Host;
+
+        internal IPopupHost? PopupHost => _popup?.Host;
+
+        event Action<IPopupHost?>? IPopupHostProvider.PopupHostChanged 
+        { 
+            add => _popupHostChangedHandler += value; 
+            remove => _popupHostChangedHandler -= value;
         }
 
         private void Open(Control control)
         {
             Close();
+            
+            if (_popup is null)
+            {
+                _popup = new Popup();
+                _popup.Child = this;
+                _popup.WindowManagerAddShadowHint = false;
 
-            _popup = new PopupRoot { Content = this,  };
-            ((ISetLogicalParent)_popup).SetParent(control);
-            _popup.Position = Popup.GetPosition(control, GetPlacement(control), _popup,
-                GetHorizontalOffset(control), GetVerticalOffset(control));
-            _popup.Show();
-            _popup.SnapInsideScreenEdges();
+                _popup.Opened += OnPopupOpened;
+                _popup.Closed += OnPopupClosed;
+            }
+
+            _subscriptions = new CompositeDisposable(new[]
+            {
+                _popup.Bind(Popup.HorizontalOffsetProperty, control.GetBindingObservable(HorizontalOffsetProperty)),
+                _popup.Bind(Popup.VerticalOffsetProperty, control.GetBindingObservable(VerticalOffsetProperty)),
+                _popup.Bind(Popup.PlacementProperty, control.GetBindingObservable(PlacementProperty))
+            });
+
+            _popup.PlacementTarget = control;
+            _popup.SetPopupParent(control);
+
+            _popup.IsOpen = true;
         }
 
         private void Close()
         {
-            if (_popup != null)
+            _subscriptions?.Dispose();
+
+            if (_popup is not null)
             {
-                _popup.Content = null;
-                _popup.Hide();
-                _popup = null;
+                _popup.IsOpen = false;
+                _popup.SetPopupParent(null);
+                _popup.PlacementTarget = null;
             }
+        }
+
+        private void OnPopupClosed(object? sender, EventArgs e)
+        {
+            // This condition is true, when Popup was closed by any other reason outside of ToolTipService/ToolTip, keeping IsOpen=true.
+            if (AdornedControl is { } adornedControl
+                && GetIsOpen(adornedControl))
+            {
+                adornedControl.SetCurrentValue(IsOpenProperty, false);
+            }
+
+            _popupHostChangedHandler?.Invoke(null);
+            Closed?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void OnPopupOpened(object? sender, EventArgs e)
+        {
+            _popupHostChangedHandler?.Invoke(((Popup)sender!).Host);
+        }
+
+        private void UpdatePseudoClasses(bool newValue)
+        {
+            PseudoClasses.Set(":open", newValue);
         }
     }
 }

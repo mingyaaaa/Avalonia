@@ -1,9 +1,6 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using ControlCatalog.ViewModels;
 
 namespace ControlCatalog.Pages
 {
@@ -11,15 +8,13 @@ namespace ControlCatalog.Pages
     {
         public ListBoxPage()
         {
-            this.InitializeComponent();
-            DataContext = Enumerable.Range(1, 10).Select(i => $"Item {i}" )
-                .ToArray();
+            InitializeComponent();
+            DataContext = new ListBoxPageViewModel();
         }
 
         private void InitializeComponent()
         {
             AvaloniaXamlLoader.Load(this);
         }
-
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 
 namespace Avalonia
@@ -17,15 +14,22 @@ namespace Avalonia
         /// <returns>
         /// The default value.
         /// </returns>
-        object GetDefaultValue(Type type);
+        object? GetDefaultValue(Type type);
 
         /// <summary>
-        /// Gets a validation function for the property on the specified type.
+        /// Gets the default value for the property for the specified object.
         /// </summary>
-        /// <param name="type">The type.</param>
+        /// <param name="owner">The object.</param>
         /// <returns>
-        /// The validation function, or null if no validation function exists.
+        /// The default value.
         /// </returns>
-        Func<IAvaloniaObject, object, object> GetValidationFunc(Type type);
+        object? GetDefaultValue(AvaloniaObject owner);
+
+        /// <summary>
+        /// Validates the specified property value.
+        /// </summary>
+        /// <param name="value">The value.</param>
+        /// <returns>True if the value is valid, otherwise false.</returns>
+        bool ValidateValue(object? value);
     }
 }

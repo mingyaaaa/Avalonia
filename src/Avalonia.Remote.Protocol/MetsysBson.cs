@@ -32,6 +32,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
@@ -71,7 +72,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
-
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class Serializer
     {
         private static readonly IDictionary<Type, Types> _typeMap = new Dictionary<Type, Types>
@@ -562,7 +564,7 @@ namespace Metsys.Bson
         {
             if (_string == null && Value != null)
             {
-                _string = BitConverter.ToString(Value).Replace("-", string.Empty).ToLower();
+                _string = BitConverter.ToString(Value).Replace("-", string.Empty).ToLowerInvariant();
             }
 
             return _string;
@@ -614,6 +616,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class MagicProperty
     {
         private readonly PropertyInfo _property;
@@ -687,6 +691,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class TypeHelper
     {
         private static readonly IDictionary<Type, TypeHelper> _cachedTypeLookup = new Dictionary<Type, TypeHelper>();
@@ -713,7 +719,8 @@ namespace Metsys.Bson
 
         public MagicProperty FindProperty(string name)
         {
-            return _properties.ContainsKey(name) ? _properties[name] : null;
+            _properties.TryGetValue(name, out var property);
+            return property;
         }
 
         public static TypeHelper GetHelperForType(Type type)
@@ -749,7 +756,7 @@ namespace Metsys.Bson
 
                         if (memberExpression.Expression.NodeType != ExpressionType.Parameter && memberExpression.Expression.NodeType != ExpressionType.Convert)
                         {
-                            throw new ArgumentException(string.Format("Expression '{0}' must resolve to top-level member.", lambdaExpression), nameof(lambdaExpression));
+                            throw new ArgumentException($"Expression '{lambdaExpression}' must resolve to top-level member.", nameof(lambdaExpression));
                         }
                         return memberExpression.Member.Name;
                     default:
@@ -787,6 +794,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class ListWrapper : BaseWrapper
     {
         private IList _list;
@@ -821,6 +830,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal static class ListHelper
     {
         public static Type GetListItemType(Type enumerableType)
@@ -865,6 +876,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class CollectionWrapper<T> : BaseWrapper
     {
         private ICollection<T> _list;
@@ -892,6 +905,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal abstract class BaseWrapper
     {
         public static BaseWrapper Create(Type type, Type itemType, object existingContainer)
@@ -935,7 +950,7 @@ namespace Metsys.Bson
                     return new ListWrapper();
                 }
             }
-            throw new BsonException(string.Format("Collection of type {0} cannot be deserialized", type.FullName));
+            throw new BsonException($"Collection of type {type.FullName} cannot be deserialized");
         }
 
         public abstract void Add(object value);
@@ -948,7 +963,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
-
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class ArrayWrapper<T> : BaseWrapper
     {
         private readonly List<T> _list = new List<T>();
@@ -1000,6 +1016,8 @@ namespace Metsys.Bson
 
 namespace Metsys.Bson
 {
+    [RequiresUnreferencedCode("Bson uses reflection")]
+    [UnconditionalSuppressMessage("Trimming", "IL3050", Justification = "Bson uses reflection")]
     internal class Deserializer
     {
         internal class Options
@@ -1189,7 +1207,9 @@ namespace Metsys.Bson
                 }
                 object container = null;
                 var property = typeHelper.FindProperty(name);
-                var propertyType = property != null ? property.Type : _typeMap.ContainsKey(storageType) ? _typeMap[storageType] : typeof(object);
+                var propertyType = property?.Type
+                    ?? (_typeMap.TryGetValue(storageType, out var type1) ? type1 : null)
+                    ?? typeof(object);
                 if (property != null && property.Setter == null)
                 {
                     container = property.Getter(instance);
@@ -1363,14 +1383,14 @@ namespace Metsys.Bson
             var pattern = ReadName();
             var optionsString = ReadName();
 
-            var options = RegexOptions.None;
-            if (optionsString.Contains("e")) options = options | RegexOptions.ECMAScript;
-            if (optionsString.Contains("i")) options = options | RegexOptions.IgnoreCase;
-            if (optionsString.Contains("l")) options = options | RegexOptions.CultureInvariant;
-            if (optionsString.Contains("m")) options = options | RegexOptions.Multiline;
-            if (optionsString.Contains("s")) options = options | RegexOptions.Singleline;
-            if (optionsString.Contains("w")) options = options | RegexOptions.IgnorePatternWhitespace;
-            if (optionsString.Contains("x")) options = options | RegexOptions.ExplicitCapture;
+            var options = RegexOptions.Compiled;
+            if (optionsString.Contains('e')) options = options | RegexOptions.ECMAScript;
+            if (optionsString.Contains('i')) options = options | RegexOptions.IgnoreCase;
+            if (optionsString.Contains('l')) options = options | RegexOptions.CultureInvariant;
+            if (optionsString.Contains('m')) options = options | RegexOptions.Multiline;
+            if (optionsString.Contains('s')) options = options | RegexOptions.Singleline;
+            if (optionsString.Contains('w')) options = options | RegexOptions.IgnorePatternWhitespace;
+            if (optionsString.Contains('x')) options = options | RegexOptions.ExplicitCapture;
 
             return new Regex(pattern, options);
         }
@@ -1504,7 +1524,7 @@ namespace Metsys.Bson.Configuration
                     result = Visit((MemberExpression)expression.Left);
                 }
                 var index = Expression.Lambda(expression.Right).Compile().DynamicInvoke();
-                return result + string.Format("[{0}]", index);
+                return result + $"[{index}]";
             }
 
             private string Visit(MemberExpression expression)
@@ -1530,7 +1550,7 @@ namespace Metsys.Bson.Configuration
                 if (expression.Method.Name == "get_Item" && expression.Arguments.Count == 1)
                 {
                     var index = Expression.Lambda(expression.Arguments[0]).Compile().DynamicInvoke();
-                    name += string.Format("[{0}]", index);
+                    name += $"[{index}]";
                 }
                 return name;
             }
@@ -1568,11 +1588,12 @@ namespace Metsys.Bson.Configuration
         internal void AddMap<T>(string property, string alias)
         {
             var type = typeof(T);
-            if (!_aliasMap.ContainsKey(type))
+            if (!_aliasMap.TryGetValue(type, out var aliases))
             {
-                _aliasMap[type] = new Dictionary<string, string>();
+                aliases = new Dictionary<string, string>();
+                _aliasMap[type] = aliases;
             }
-            _aliasMap[type][property] = alias;
+            aliases[property] = alias;
         }
         internal string AliasFor(Type type, string property)
         {
@@ -1581,17 +1602,18 @@ namespace Metsys.Bson.Configuration
             {
                 return property;
             }
-            return map.ContainsKey(property) ? map[property] : property;
+            return map.TryGetValue(property, out var value) ? value : property;
         }
 
         public void AddIgnore<T>(string name)
         {
             var type = typeof(T);
-            if (!_ignored.ContainsKey(type))
+            if (!_ignored.TryGetValue(type, out var names))
             {
-                _ignored[type] = new HashSet<string>();
+                names = new HashSet<string>();
+                _ignored[type] = names;
             }
-            _ignored[type].Add(name);
+            names.Add(name);
         }
         public bool IsIgnored(Type type, string name)
         {
@@ -1602,11 +1624,12 @@ namespace Metsys.Bson.Configuration
         public void AddIgnoreIfNull<T>(string name)
         {
             var type = typeof(T);
-            if (!_ignoredIfNull.ContainsKey(type))
+            if (!_ignoredIfNull.TryGetValue(type, out var names))
             {
-                _ignoredIfNull[type] = new HashSet<string>();
+                names = new HashSet<string>();
+                _ignoredIfNull[type] = names;
             }
-            _ignoredIfNull[type].Add(name);
+            names.Add(name);
         }
         public bool IsIgnoredIfNull(Type type, string name)
         {
@@ -1623,6 +1646,5 @@ namespace Metsys.Bson
         public BsonException() { }
         public BsonException(string message) : base(message) { }
         public BsonException(string message, Exception innerException) : base(message, innerException) { }
-        protected BsonException(SerializationInfo info, StreamingContext context) : base(info, context) { }
     }
 }

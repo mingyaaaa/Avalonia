@@ -3,23 +3,28 @@ using Avalonia.Platform;
 
 namespace Avalonia.Win32
 {
-    public class WinScreen : Screen
+    internal class WinScreen : Screen
     {
         private readonly IntPtr _hMonitor;
 
-        public WinScreen(PixelRect bounds, PixelRect workingArea, bool primary, IntPtr hMonitor) : base(bounds, workingArea, primary)
+        public WinScreen(double scaling, PixelRect bounds, PixelRect workingArea, bool isPrimary, IntPtr hMonitor)
+            : base(scaling, bounds, workingArea, isPrimary)
         {
-            this._hMonitor = hMonitor;
+            _hMonitor = hMonitor;
         }
 
+        public IntPtr Handle => _hMonitor;
+
+        /// <inheritdoc />
         public override int GetHashCode()
         {
-            return (int)_hMonitor;
+            return _hMonitor.GetHashCode();
         }
 
-        public override bool Equals(object obj)
+        /// <inheritdoc />
+        public override bool Equals(object? obj)
         {
-            return (obj is WinScreen screen) ? this._hMonitor == screen._hMonitor : base.Equals(obj);
+            return obj is WinScreen screen && _hMonitor == screen._hMonitor;
         }
     }
 }

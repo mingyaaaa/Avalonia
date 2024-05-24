@@ -1,19 +1,22 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using static Avalonia.X11.XLib;
 namespace Avalonia.X11
 {
-    class X11Clipboard : IClipboard
+    internal class X11Clipboard : IClipboard
     {
         private readonly X11Info _x11;
-        private string _storedString;
+        private IDataObject _storedDataObject;
         private IntPtr _handle;
+        private TaskCompletionSource<bool> _storeAtomTcs;
         private TaskCompletionSource<IntPtr[]> _requestedFormatsTcs;
-        private TaskCompletionSource<string> _requestedTextTcs;
+        private TaskCompletionSource<object> _requestedDataTcs;
         private readonly IntPtr[] _textAtoms;
         private readonly IntPtr _avaloniaSaveTargetsAtom;
 
@@ -31,7 +34,12 @@ namespace Avalonia.X11
             }.Where(a => a != IntPtr.Zero).ToArray();
         }
 
-        Encoding GetStringEncoding(IntPtr atom)
+        private bool IsStringAtom(IntPtr atom)
+        {
+            return _textAtoms.Contains(atom);
+        }
+
+        private Encoding GetStringEncoding(IntPtr atom)
         {
             return (atom == _x11.Atoms.XA_STRING
                     || atom == _x11.Atoms.OEMTEXT)
@@ -43,8 +51,14 @@ namespace Avalonia.X11
                         : null;
         }
         
-        private unsafe void OnEvent(XEvent ev)
+        private unsafe void OnEvent(ref XEvent ev)
         {
+            if (ev.type == XEventName.SelectionClear)
+            {   
+                _storeAtomTcs?.TrySetResult(true);
+                return;
+            }
+
             if (ev.type == XEventName.SelectionRequest)
             {       
                 var sel = ev.SelectionRequestEvent;
@@ -53,7 +67,7 @@ namespace Avalonia.X11
                     SelectionEvent =
                     {
                         type = XEventName.SelectionNotify,
-                        send_event = true,
+                        send_event = 1,
                         display = _x11.Display,
                         selection = sel.selection,
                         target = sel.target,
@@ -75,21 +89,22 @@ namespace Avalonia.X11
                 Encoding textEnc;
                 if (target == _x11.Atoms.TARGETS)
                 {
-                    var atoms = _textAtoms;
-                    atoms = atoms.Concat(new[] {_x11.Atoms.TARGETS, _x11.Atoms.MULTIPLE})
-                        .ToArray();
+                    var atoms = ConvertDataObject(_storedDataObject);
                     XChangeProperty(_x11.Display, window, property,
-                        target, 32, PropertyMode.Replace, atoms, atoms.Length);
+                        _x11.Atoms.XA_ATOM, 32, PropertyMode.Replace, atoms, atoms.Length);
                     return property;
                 }
                 else if(target == _x11.Atoms.SAVE_TARGETS && _x11.Atoms.SAVE_TARGETS != IntPtr.Zero)
                 {
                     return property;
                 }
-                else if ((textEnc = GetStringEncoding(target)) != null)
+                else if ((textEnc = GetStringEncoding(target)) != null 
+                         && _storedDataObject?.Contains(DataFormats.Text) == true)
                 {
-
-                    var data = textEnc.GetBytes(_storedString ?? "");
+                    var text = _storedDataObject.GetText();
+                    if(text == null)
+                        return IntPtr.Zero;
+                    var data = textEnc.GetBytes(text);
                     fixed (void* pdata = data)
                         XChangeProperty(_x11.Display, window, property, target, 8,
                             PropertyMode.Replace,
@@ -121,6 +136,23 @@ namespace Avalonia.X11
 
                     return property;
                 }
+                else if(_storedDataObject?.Contains(_x11.Atoms.GetAtomName(target)) == true)
+                {
+                    var objValue = _storedDataObject.Get(_x11.Atoms.GetAtomName(target));
+                    
+                    if(!(objValue is byte[] bytes))
+                    {
+                        if (objValue is string s)
+                            bytes = Encoding.UTF8.GetBytes(s);
+                        else
+                            return IntPtr.Zero;
+                    }
+
+                    XChangeProperty(_x11.Display, window, property, target, 8,
+                        PropertyMode.Replace,
+                        bytes, bytes.Length);
+                    return property;
+                }
                 else
                     return IntPtr.Zero;
             }
@@ -131,15 +163,15 @@ namespace Avalonia.X11
                 if (sel.property == IntPtr.Zero)
                 {
                     _requestedFormatsTcs?.TrySetResult(null);
-                    _requestedTextTcs?.TrySetResult(null);
+                    _requestedDataTcs?.TrySetResult(null);
                 }
                 XGetWindowProperty(_x11.Display, _handle, sel.property, IntPtr.Zero, new IntPtr (0x7fffffff), true, (IntPtr)Atom.AnyPropertyType,
-                    out var actualAtom, out var actualFormat, out var nitems, out var bytes_after, out var prop);
+                    out var actualTypeAtom, out var actualFormat, out var nitems, out var bytes_after, out var prop);
                 Encoding textEnc = null;
                 if (nitems == IntPtr.Zero)
                 {
                     _requestedFormatsTcs?.TrySetResult(null);
-                    _requestedTextTcs?.TrySetResult(null);
+                    _requestedDataTcs?.TrySetResult(null);
                 }
                 else
                 {
@@ -154,10 +186,24 @@ namespace Avalonia.X11
                             _requestedFormatsTcs?.TrySetResult(formats);
                         }
                     }
-                    else if ((textEnc = GetStringEncoding(sel.property)) != null)
+                    else if ((textEnc = GetStringEncoding(actualTypeAtom)) != null)
                     {
                         var text = textEnc.GetString((byte*)prop.ToPointer(), nitems.ToInt32());
-                        _requestedTextTcs?.TrySetResult(text);
+                        _requestedDataTcs?.TrySetResult(text);
+                    }
+                    else
+                    {
+                        if (actualTypeAtom == _x11.Atoms.INCR)
+                        {
+                            // TODO: Actually implement that monstrosity
+                            _requestedDataTcs.TrySetResult(null);
+                        }
+                        else
+                        {
+                            var data = new byte[(int)nitems * (actualFormat / 8)];
+                            Marshal.Copy(prop, data, 0, data.Length);
+                            _requestedDataTcs?.TrySetResult(data);
+                        }
                     }
                 }
 
@@ -165,7 +211,7 @@ namespace Avalonia.X11
             }
         }
 
-        Task<IntPtr[]> SendFormatRequest()
+        private Task<IntPtr[]> SendFormatRequest()
         {
             if (_requestedFormatsTcs == null || _requestedFormatsTcs.Task.IsCompleted)
                 _requestedFormatsTcs = new TaskCompletionSource<IntPtr[]>();
@@ -174,17 +220,19 @@ namespace Avalonia.X11
             return _requestedFormatsTcs.Task;
         }
 
-        Task<string> SendTextRequest(IntPtr format)
+        private Task<object> SendDataRequest(IntPtr format)
         {
-            if (_requestedTextTcs == null || _requestedFormatsTcs.Task.IsCompleted)
-                _requestedTextTcs = new TaskCompletionSource<string>();
+            if (_requestedDataTcs == null || _requestedDataTcs.Task.IsCompleted)
+                _requestedDataTcs = new TaskCompletionSource<object>();
             XConvertSelection(_x11.Display, _x11.Atoms.CLIPBOARD, format, format, _handle, IntPtr.Zero);
-            return _requestedTextTcs.Task;
+            return _requestedDataTcs.Task;
         }
+
+        private bool HasOwner => XGetSelectionOwner(_x11.Display, _x11.Atoms.CLIPBOARD) != IntPtr.Zero;
         
         public async Task<string> GetTextAsync()
         {
-            if (XGetSelectionOwner(_x11.Display, _x11.Atoms.CLIPBOARD) == IntPtr.Zero)
+            if (!HasOwner)
                 return null;
             var res = await SendFormatRequest();
             var target = _x11.Atoms.UTF8_STRING;
@@ -199,36 +247,93 @@ namespace Avalonia.X11
                     }
             }
 
-            return await SendTextRequest(target);
+            return (string)await SendDataRequest(target);
         }
 
-        void StoreAtomsInClipboardManager(IntPtr[] atoms)
+
+        private IntPtr[] ConvertDataObject(IDataObject data)
+        {
+            var atoms = new HashSet<IntPtr> { _x11.Atoms.TARGETS, _x11.Atoms.MULTIPLE };
+            foreach (var fmt in data.GetDataFormats())
+            {
+                if (fmt == DataFormats.Text)
+                    foreach (var ta in _textAtoms)
+                        atoms.Add(ta);
+                else
+                    atoms.Add(_x11.Atoms.GetAtom(fmt));
+            }
+            return atoms.ToArray();
+        }
+
+        private Task StoreAtomsInClipboardManager(IDataObject data)
         {
             if (_x11.Atoms.CLIPBOARD_MANAGER != IntPtr.Zero && _x11.Atoms.SAVE_TARGETS != IntPtr.Zero)
             {
                 var clipboardManager = XGetSelectionOwner(_x11.Display, _x11.Atoms.CLIPBOARD_MANAGER);
                 if (clipboardManager != IntPtr.Zero)
-                {
+                {          
+                    if (_storeAtomTcs == null || _storeAtomTcs.Task.IsCompleted)
+                        _storeAtomTcs = new TaskCompletionSource<bool>();   
+                           
+                    var atoms = ConvertDataObject(data);
                     XChangeProperty(_x11.Display, _handle, _avaloniaSaveTargetsAtom, _x11.Atoms.XA_ATOM, 32,
                         PropertyMode.Replace,
                         atoms, atoms.Length);
                     XConvertSelection(_x11.Display, _x11.Atoms.CLIPBOARD_MANAGER, _x11.Atoms.SAVE_TARGETS,
                         _avaloniaSaveTargetsAtom, _handle, IntPtr.Zero);
+                    return _storeAtomTcs.Task;
                 }
             }
+            return Task.CompletedTask;
         }
 
         public Task SetTextAsync(string text)
         {
-            _storedString = text;
-            XSetSelectionOwner(_x11.Display, _x11.Atoms.CLIPBOARD, _handle, IntPtr.Zero);
-            StoreAtomsInClipboardManager(_textAtoms);
-            return Task.CompletedTask;
+            var data = new DataObject();
+            data.Set(DataFormats.Text, text);
+            return SetDataObjectAsync(data);
         }
 
         public Task ClearAsync()
         {
             return SetTextAsync(null);
+        }
+
+        public Task SetDataObjectAsync(IDataObject data)
+        {
+            _storedDataObject = data;
+            XSetSelectionOwner(_x11.Display, _x11.Atoms.CLIPBOARD, _handle, IntPtr.Zero);            
+            return StoreAtomsInClipboardManager(data);
+        }
+
+        public async Task<string[]> GetFormatsAsync()
+        {
+            if (!HasOwner)
+                return null;
+            var res = await SendFormatRequest();
+            if (res == null)
+                return null;
+            var rv = new List<string>();
+            if (_textAtoms.Any(res.Contains))
+                rv.Add(DataFormats.Text);
+            foreach (var t in res)
+                rv.Add(_x11.Atoms.GetAtomName(t));
+            return rv.ToArray();
+        }
+
+        public async Task<object> GetDataAsync(string format)
+        {
+            if (!HasOwner)
+                return null;
+            if (format == DataFormats.Text)
+                return await GetTextAsync();
+
+            var formatAtom = _x11.Atoms.GetAtom(format);
+            var res = await SendFormatRequest();
+            if (!res.Contains(formatAtom))
+                return null;
+            
+            return await SendDataRequest(formatAtom);
         }
     }
 }

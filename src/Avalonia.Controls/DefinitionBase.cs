@@ -7,9 +7,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-
-using Avalonia;
-using Avalonia.Collections;
+using Avalonia.Reactive;
 using Avalonia.Utilities;
 
 namespace Avalonia.Controls
@@ -23,10 +21,10 @@ namespace Avalonia.Controls
         /// <summary>
         /// SharedSizeGroup property.
         /// </summary>
-        public string SharedSizeGroup
+        public string? SharedSizeGroup
         {
-            get { return (string)GetValue(SharedSizeGroupProperty); }
-            set { SetValue(SharedSizeGroupProperty, value); }
+            get => GetValue(SharedSizeGroupProperty);
+            set => SetValue(SharedSizeGroupProperty, value);
         }
 
         /// <summary>
@@ -34,26 +32,23 @@ namespace Avalonia.Controls
         /// </summary>
         internal void OnEnterParentTree()
         {
-            this.InheritanceParent = Parent;
+            InheritanceParent = Parent;
             if (_sharedState == null)
             {
                 //  start with getting SharedSizeGroup value. 
-                //  this property is NOT inhereted which should result in better overall perf.
-                string sharedSizeGroupId = SharedSizeGroup;
-                if (sharedSizeGroupId != null)
+                //  this property is NOT inherited which should result in better overall perf.
+                if (SharedSizeGroup is { } sharedSizeGroupId && GetValue(PrivateSharedSizeScopeProperty) is { } privateSharedSizeScope)
                 {
-                    SharedSizeScope privateSharedSizeScope = PrivateSharedSizeScope;
-                    if (privateSharedSizeScope != null)
-                    {
-                        _sharedState = privateSharedSizeScope.EnsureSharedState(sharedSizeGroupId);
-                        _sharedState.AddMember(this);
-                    }
+                    _sharedState = privateSharedSizeScope.EnsureSharedState(sharedSizeGroupId);
+                    _sharedState.AddMember(this);
                 }
             }
+
+            Parent?.InvalidateMeasure();
         }
 
         /// <summary>
-        /// Callback to notify about exitting model tree.
+        /// Callback to notify about exiting model tree.
         /// </summary>
         internal void OnExitParentTree()
         {
@@ -63,6 +58,8 @@ namespace Avalonia.Controls
                 _sharedState.RemoveMember(this);
                 _sharedState = null;
             }
+
+            Parent?.InvalidateMeasure();
         }
 
         /// <summary>
@@ -75,7 +72,7 @@ namespace Avalonia.Controls
             LayoutWasUpdated = true;
 
             //  defer verification for shared definitions
-            if (_sharedState != null) { _sharedState.EnsureDeferredValidation(grid); }
+            _sharedState?.EnsureDeferredValidation(grid);
         }
 
         /// <summary>
@@ -103,7 +100,7 @@ namespace Avalonia.Controls
         /// </remarks>
         internal static void OnIsSharedSizeScopePropertyChanged(AvaloniaObject d, AvaloniaPropertyChangedEventArgs e)
         {
-            if ((bool)e.NewValue)
+            if ((bool)e.NewValue!)
             {
                 SharedSizeScope sharedStatesCollection = new SharedSizeScope();
                 d.SetValue(PrivateSharedSizeScopeProperty, sharedStatesCollection);
@@ -114,12 +111,42 @@ namespace Avalonia.Controls
             }
         }
 
+        /// <remarks>
+        /// Notifies parent <see cref="Grid"/> or size scope that definition size has been changed.
+        /// </remarks>
+        internal static void OnUserSizePropertyChanged(DefinitionBase definition, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (definition.Parent == null)
+            {
+                return;
+            }
+
+            if (definition._sharedState != null)
+            {
+                definition._sharedState.Invalidate();
+            }
+            else
+            {
+                GridUnitType oldUnitType = ((GridLength)e.OldValue!).GridUnitType;
+                GridUnitType newUnitType = ((GridLength)e.NewValue!).GridUnitType;
+
+                if (oldUnitType != newUnitType)
+                {
+                    definition.Parent.Invalidate();
+                }
+                else
+                {
+                    definition.Parent.InvalidateMeasure();
+                }
+            }
+        }
+
         /// <summary>
         /// Returns <c>true</c> if this definition is a part of shared group.
         /// </summary>
         internal bool IsShared
         {
-            get { return (_sharedState != null); }
+            get => (_sharedState != null);
         }
 
         /// <summary>
@@ -127,7 +154,7 @@ namespace Avalonia.Controls
         /// </summary>
         internal GridLength UserSize
         {
-            get { return (_sharedState != null ? _sharedState.UserSize : UserSizeValueCache); }
+            get => (_sharedState != null ? _sharedState.UserSize : UserSizeValueCache);
         }
 
         /// <summary>
@@ -135,7 +162,7 @@ namespace Avalonia.Controls
         /// </summary>
         internal double UserMinSize
         {
-            get { return (UserMinSizeValueCache); }
+            get => (UserMinSizeValueCache);
         }
 
         /// <summary>
@@ -143,7 +170,7 @@ namespace Avalonia.Controls
         /// </summary>
         internal double UserMaxSize
         {
-            get { return (UserMaxSizeValueCache); }
+            get => (UserMaxSizeValueCache);
         }
 
         /// <summary>
@@ -151,10 +178,7 @@ namespace Avalonia.Controls
         /// </summary>
         internal int Index
         {
-            get
-            {
-                return (_parentIndex);
-            }
+            get => (_parentIndex);
             set
             {
                 Debug.Assert(value >= -1);
@@ -167,8 +191,8 @@ namespace Avalonia.Controls
         /// </summary>
         internal Grid.LayoutTimeSizeType SizeType
         {
-            get { return (_sizeType); }
-            set { _sizeType = value; }
+            get => (_sizeType);
+            set => _sizeType = value;
         }
 
         /// <summary>
@@ -176,8 +200,8 @@ namespace Avalonia.Controls
         /// </summary>
         internal double MeasureSize
         {
-            get { return (_measureSize); }
-            set { _measureSize = value; }
+            get => (_measureSize);
+            set => _measureSize = value;
         }
 
         /// <summary>
@@ -205,8 +229,8 @@ namespace Avalonia.Controls
         /// </summary>
         internal double SizeCache
         {
-            get { return (_sizeCache); }
-            set { _sizeCache = value; }
+            get => (_sizeCache);
+            set => _sizeCache = value;
         }
 
         /// <summary>
@@ -250,8 +274,8 @@ namespace Avalonia.Controls
         /// </summary>
         internal double FinalOffset
         {
-            get { return _offset; }
-            set { _offset = value; }
+            get => _offset;
+            set => _offset = value;
         }
 
         /// <summary>
@@ -269,7 +293,7 @@ namespace Avalonia.Controls
         /// </summary>
         internal abstract double UserMaxSizeValueCache { get; }
 
-        internal Grid Parent { get; set; }
+        internal Grid? Parent { get; set; }
 
         /// <summary>
         /// SetFlags is used to set or unset one or multiple
@@ -289,13 +313,12 @@ namespace Avalonia.Controls
             return ((_flags & flags) == flags);
         }
 
-        private static void OnSharedSizeGroupPropertyChanged(AvaloniaObject d, AvaloniaPropertyChangedEventArgs e)
+        private static void OnSharedSizeGroupPropertyChanged(DefinitionBase definition,
+            AvaloniaPropertyChangedEventArgs<string?> e)
         {
-            DefinitionBase definition = (DefinitionBase)d;
-
             if (definition.Parent != null)
             {
-                string sharedSizeGroupId = (string)e.NewValue;
+                string? sharedSizeGroupId = e.NewValue.Value;
 
                 if (definition._sharedState != null)
                 {
@@ -305,16 +328,14 @@ namespace Avalonia.Controls
                     definition._sharedState = null;
                 }
 
-                if ((definition._sharedState == null) && (sharedSizeGroupId != null))
+                if (definition._sharedState == null
+                    && sharedSizeGroupId != null
+                    && definition.GetValue(PrivateSharedSizeScopeProperty) is { } privateSharedSizeScope)
                 {
-                    SharedSizeScope privateSharedSizeScope = definition.PrivateSharedSizeScope;
-                    if (privateSharedSizeScope != null)
-                    {
-                        //  if definition is not registered and both: shared size group id AND private shared scope 
-                        //  are available, then register definition.
-                        definition._sharedState = privateSharedSizeScope.EnsureSharedState(sharedSizeGroupId);
-                        definition._sharedState.AddMember(definition);
-                    }
+                    //  if definition is not registered and both: shared size group id AND private shared scope
+                    //  are available, then register definition.
+                    definition._sharedState = privateSharedSizeScope.EnsureSharedState(sharedSizeGroupId);
+                    definition._sharedState.AddMember(definition);
                 }
             }
         }
@@ -325,13 +346,15 @@ namespace Avalonia.Controls
         /// b) contains only letters, digits and underscore ('_').
         /// c) does not start with a digit.
         /// </remarks>
-        private static string SharedSizeGroupPropertyValueValid(Control _, string value)
+        private static bool SharedSizeGroupPropertyValueValid(string? id)
         {
-            Contract.Requires<ArgumentNullException>(value != null);
+            //  null is default value
+            if (id == null)
+            {
+                return true;
+            }
 
-            string id = (string)value;
-
-            if (id != string.Empty)
+            if (id.Length > 0)
             {
                 int i = -1;
                 while (++i < id.Length)
@@ -349,11 +372,11 @@ namespace Avalonia.Controls
 
                 if (i == id.Length)
                 {
-                    return value;
+                    return true;
                 }
             }
 
-            throw new ArgumentException("Invalid SharedSizeGroup string.");
+            return false;
         }
 
         /// <remark>
@@ -361,14 +384,11 @@ namespace Avalonia.Controls
         /// existing scope just left. In both cases if the DefinitionBase object is already registered
         /// in SharedSizeState, it should un-register and register itself in a new one.
         /// </remark>
-        private static void OnPrivateSharedSizeScopePropertyChanged(AvaloniaObject d, AvaloniaPropertyChangedEventArgs e)
+        private static void OnPrivateSharedSizeScopePropertyChanged(DefinitionBase definition,
+            AvaloniaPropertyChangedEventArgs<SharedSizeScope?> e)
         {
-            DefinitionBase definition = (DefinitionBase)d;
-
             if (definition.Parent != null)
             {
-                SharedSizeScope privateSharedSizeScope = (SharedSizeScope)e.NewValue;
-
                 if (definition._sharedState != null)
                 {
                     //  if definition is already registered And shared size scope is changing,
@@ -377,26 +397,16 @@ namespace Avalonia.Controls
                     definition._sharedState = null;
                 }
 
-                if ((definition._sharedState == null) && (privateSharedSizeScope != null))
+                if (definition._sharedState == null
+                    && e.NewValue.Value is { } privateSharedSizeScope
+                    && definition.SharedSizeGroup is { } sharedSizeGroup)
                 {
-                    string sharedSizeGroup = definition.SharedSizeGroup;
-                    if (sharedSizeGroup != null)
-                    {
-                        //  if definition is not registered and both: shared size group id AND private shared scope 
-                        //  are available, then register definition.
-                        definition._sharedState = privateSharedSizeScope.EnsureSharedState(definition.SharedSizeGroup);
-                        definition._sharedState.AddMember(definition);
-                    }
+                    //  if definition is not registered and both: shared size group id AND private shared scope
+                    //  are available, then register definition.
+                    definition._sharedState = privateSharedSizeScope.EnsureSharedState(sharedSizeGroup);
+                    definition._sharedState.AddMember(definition);
                 }
             }
-        }
-
-        /// <summary>
-        /// Private getter of shared state collection dynamic property.
-        /// </summary>
-        private SharedSizeScope PrivateSharedSizeScope
-        {
-            get { return (SharedSizeScope)GetValue(PrivateSharedSizeScopeProperty); }
         }
 
         /// <summary>
@@ -404,8 +414,8 @@ namespace Avalonia.Controls
         /// </summary>
         private bool UseSharedMinimum
         {
-            get { return (CheckFlagsAnd(Flags.UseSharedMinimum)); }
-            set { SetFlags(value, Flags.UseSharedMinimum); }
+            get => (CheckFlagsAnd(Flags.UseSharedMinimum));
+            set => SetFlags(value, Flags.UseSharedMinimum);
         }
 
         /// <summary>
@@ -413,8 +423,8 @@ namespace Avalonia.Controls
         /// </summary>
         private bool LayoutWasUpdated
         {
-            get { return (CheckFlagsAnd(Flags.LayoutWasUpdated)); }
-            set { SetFlags(value, Flags.LayoutWasUpdated); }
+            get => (CheckFlagsAnd(Flags.LayoutWasUpdated));
+            set => SetFlags(value, Flags.LayoutWasUpdated);
         }
 
         private Flags _flags;                           //  flags reflecting various aspects of internal state
@@ -423,13 +433,13 @@ namespace Avalonia.Controls
         private Grid.LayoutTimeSizeType _sizeType;      //  layout-time user size type. it may differ from _userSizeValueCache.UnitType when calculating "to-content"
 
         private double _minSize;                        //  used during measure to accumulate size for "Auto" and "Star" DefinitionBase's
-        private double _measureSize;                    //  size, calculated to be the input contstraint size for Child.Measure
+        private double _measureSize;                    //  size, calculated to be the input constraint size for Child.Measure
         private double _sizeCache;                      //  cache used for various purposes (sorting, caching, etc) during calculations
         private double _offset;                         //  offset of the DefinitionBase from left / top corner (assuming LTR case)
 
-        private SharedSizeState _sharedState;           //  reference to shared state object this instance is registered with
+        private SharedSizeState? _sharedState;           //  reference to shared state object this instance is registered with
 
-        [System.Flags]
+        [Flags]
         private enum Flags : byte
         {
             //
@@ -453,7 +463,7 @@ namespace Avalonia.Controls
                 //  check that sharedSizeGroup is not default
                 Debug.Assert(sharedSizeGroup != null);
 
-                SharedSizeState sharedState = _registry[sharedSizeGroup] as SharedSizeState;
+                SharedSizeState? sharedState = _registry[sharedSizeGroup] as SharedSizeState;
                 if (sharedState == null)
                 {
                     sharedState = new SharedSizeState(this, sharedSizeGroup);
@@ -484,11 +494,10 @@ namespace Avalonia.Controls
             /// </summary>
             internal SharedSizeState(SharedSizeScope sharedSizeScope, string sharedSizeGroupId)
             {
-                Debug.Assert(sharedSizeScope != null && sharedSizeGroupId != null);
                 _sharedSizeScope = sharedSizeScope;
                 _sharedSizeGroupId = sharedSizeGroupId;
                 _registry = new List<DefinitionBase>();
-                _layoutUpdated = new EventHandler(OnLayoutUpdated);
+                _layoutUpdated = OnLayoutUpdated;
                 _broadcastInvalidation = true;
             }
 
@@ -521,7 +530,7 @@ namespace Avalonia.Controls
             }
 
             /// <summary>
-            /// Propogates invalidations for all registered definitions.
+            /// Propagates invalidations for all registered definitions.
             /// Resets its own state.
             /// </summary>
             internal void Invalidate()
@@ -532,7 +541,7 @@ namespace Avalonia.Controls
                 {
                     for (int i = 0, count = _registry.Count; i < count; ++i)
                     {
-                        Grid parentGrid = (Grid)(_registry[i].Parent);
+                        Grid parentGrid = _registry[i].Parent!;
                         parentGrid.Invalidate();
                     }
                     _broadcastInvalidation = false;
@@ -610,7 +619,7 @@ namespace Avalonia.Controls
             /// OnLayoutUpdated handler. Validates that all participating definitions
             /// have updated min size value. Forces another layout update cycle if needed.
             /// </summary>
-            private void OnLayoutUpdated(object sender, EventArgs e)
+            private void OnLayoutUpdated(object? sender, EventArgs e)
             {
                 double sharedMinSize = 0;
 
@@ -627,36 +636,69 @@ namespace Avalonia.Controls
                 {
                     DefinitionBase definitionBase = _registry[i];
 
-                    if (sharedMinSizeChanged || definitionBase.LayoutWasUpdated)
+                    // we'll set d.UseSharedMinimum to maintain the invariant:
+                    //      d.UseSharedMinimum iff d._minSize < this.MinSize
+                    // i.e. iff d is not a "long-pole" definition.
+                    //
+                    // Measure/Arrange of d's Grid uses d._minSize for long-pole
+                    // definitions, and max(d._minSize, shared size) for
+                    // short-pole definitions.  This distinction allows us to react
+                    // to changes in "long-pole-ness" more efficiently and correctly,
+                    // by avoiding remeasures when a long-pole definition changes.
+                    bool useSharedMinimum = !MathUtilities.AreClose(definitionBase._minSize, sharedMinSize);
+
+                    // before doing that, determine whether d's Grid needs to be remeasured.
+                    // It's important _not_ to remeasure if the last measure is still
+                    // valid, otherwise infinite loops are possible
+                    bool measureIsValid;
+
+                    if(!definitionBase.UseSharedMinimum)
                     {
-                        //  if definition's min size is different, then need to re-measure
-                        if (!MathUtilities.AreClose(sharedMinSize, definitionBase.MinSize))
-                        {
-                            Grid parentGrid = (Grid)definitionBase.Parent;
-                            parentGrid.InvalidateMeasure();
-                            definitionBase.UseSharedMinimum = true;
-                        }
-                        else
-                        {
-                            definitionBase.UseSharedMinimum = false;
-
-                            //  if measure is valid then also need to check arrange.
-                            //  Note: definitionBase.SizeCache is volatile but at this point 
-                            //  it contains up-to-date final size
-                            if (!MathUtilities.AreClose(sharedMinSize, definitionBase.SizeCache))
-                            {
-                                Grid parentGrid = (Grid)definitionBase.Parent;
-                                parentGrid.InvalidateArrange();
-                            }
-                        }
-
-                        definitionBase.LayoutWasUpdated = false;
+                        // d was a long-pole.  measure is valid iff it's still a long-pole,
+                        // since previous measure didn't use shared size.
+                        measureIsValid = !useSharedMinimum;
                     }
+                    else if(useSharedMinimum)
+                    {
+                        // d was a short-pole, and still is.  measure is valid
+                        // iff the shared size didn't change
+                        measureIsValid = !sharedMinSizeChanged;
+                    }
+                    else
+                    {
+                        // d was a short-pole, but is now a long-pole.  This can
+                        // happen in several ways:
+                        //  a. d's minSize increased to or past the old shared size
+                        //  b. other long-pole definitions decreased, leaving
+                        //      d as the new winner
+                        // In the former case, the measure is valid - it used
+                        // d's new larger minSize.  In the latter case, the
+                        // measure is invalid - it used the old shared size,
+                        // which is larger than d's (possibly changed) minSize
+                        measureIsValid = (definitionBase.LayoutWasUpdated &&
+                                        MathUtilities.GreaterThanOrClose(definitionBase._minSize, MinSize));
+                    }
+
+                    if(!measureIsValid)
+                    {
+                        definitionBase.Parent!.InvalidateMeasure();
+                    }
+                    else if (!MathUtilities.AreClose(sharedMinSize, definitionBase.SizeCache))
+                    {
+                        //  if measure is valid then also need to check arrange.
+                        //  Note: definitionBase.SizeCache is volatile but at this point 
+                        //  it contains up-to-date final size
+                        definitionBase.Parent!.InvalidateArrange();
+                    }
+
+                    // now we can restore the invariant, and clear the layout flag
+                    definitionBase.UseSharedMinimum = useSharedMinimum;
+                    definitionBase.LayoutWasUpdated = false;
                 }
 
                 _minSize = sharedMinSize;
 
-                _layoutUpdatedHost.LayoutUpdated -= _layoutUpdated;
+                _layoutUpdatedHost!.LayoutUpdated -= _layoutUpdated;
                 _layoutUpdatedHost = null;
 
                 _broadcastInvalidation = true;
@@ -675,7 +717,7 @@ namespace Avalonia.Controls
             private readonly EventHandler _layoutUpdated;
 
             //  Control for which layout updated event handler is registered
-            private Control _layoutUpdatedHost;
+            private Control? _layoutUpdatedHost;
 
             //  "true" when broadcasting of invalidation is needed
             private bool _broadcastInvalidation;
@@ -694,8 +736,8 @@ namespace Avalonia.Controls
         /// Private shared size scope property holds a collection of shared state objects for the a given shared size scope.
         /// <see cref="OnIsSharedSizeScopePropertyChanged"/>
         /// </summary>
-        internal static readonly AttachedProperty<SharedSizeScope> PrivateSharedSizeScopeProperty =
-            AvaloniaProperty.RegisterAttached<DefinitionBase, Control, SharedSizeScope>(
+        internal static readonly AttachedProperty<SharedSizeScope?> PrivateSharedSizeScopeProperty =
+            AvaloniaProperty.RegisterAttached<DefinitionBase, Control, SharedSizeScope?>(
                 "PrivateSharedSizeScope",
                 defaultValue: null,
                 inherits: true);
@@ -717,8 +759,8 @@ namespace Avalonia.Controls
         /// </description></item>
         /// </list>
         /// </remarks> 
-        public static readonly AttachedProperty<string> SharedSizeGroupProperty =
-            AvaloniaProperty.RegisterAttached<DefinitionBase, Control, string>(
+        public static readonly AttachedProperty<string?> SharedSizeGroupProperty =
+            AvaloniaProperty.RegisterAttached<DefinitionBase, Control, string?>(
                 "SharedSizeGroup",
                 validate: SharedSizeGroupPropertyValueValid);
 
@@ -727,8 +769,23 @@ namespace Avalonia.Controls
         /// </summary>
         static DefinitionBase()
         {
-            SharedSizeGroupProperty.Changed.AddClassHandler<DefinitionBase>(OnSharedSizeGroupPropertyChanged);
-            PrivateSharedSizeScopeProperty.Changed.AddClassHandler<DefinitionBase>(OnPrivateSharedSizeScopePropertyChanged);
+            SharedSizeGroupProperty.Changed.AddClassHandler<DefinitionBase, string?>(OnSharedSizeGroupPropertyChanged);
+            PrivateSharedSizeScopeProperty.Changed.AddClassHandler<DefinitionBase, SharedSizeScope?>(OnPrivateSharedSizeScopePropertyChanged);
+        }
+
+        /// <summary>
+        /// Marks a property on a definition as affecting the parent grid's measurement.
+        /// </summary>
+        /// <param name="properties">The properties.</param>
+        protected static void AffectsParentMeasure(params AvaloniaProperty[] properties)
+        {
+            var invalidateObserver = new AnonymousObserver<AvaloniaPropertyChangedEventArgs>(
+                static e => (e.Sender as DefinitionBase)?.Parent?.InvalidateMeasure());
+
+            foreach (var property in properties)
+            {
+                property.Changed.Subscribe(invalidateObserver);
+            }
         }
     }
 }

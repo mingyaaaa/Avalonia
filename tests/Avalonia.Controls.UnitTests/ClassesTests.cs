@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using Xunit;
 
@@ -170,6 +167,37 @@ namespace Avalonia.Controls.UnitTests
             target.RemoveAll(new[] { "bar", "baz" });
 
             Assert.Equal(new[] { "foo" }, target);
+        }
+
+        [Fact]
+        public void Listeners_Can_Be_Added_By_Listener()
+        {
+            var classes = new Classes();
+            var listener1 = new ClassesChangedListener(() => { });
+            var listener2 = new ClassesChangedListener(() => classes.AddListener(listener1));
+
+            classes.AddListener(listener2);
+            classes.Add("bar");
+        }
+
+        [Fact]
+        public void Listeners_Can_Be_Removed_By_Listener()
+        {
+            var classes = new Classes();
+            var listener1 = new ClassesChangedListener(() => { });
+            var listener2 = new ClassesChangedListener(() => classes.RemoveListener(listener1));
+
+            classes.AddListener(listener1);
+            classes.AddListener(listener2);
+            classes.Add("bar");
+        }
+
+        private class ClassesChangedListener : IClassesChangedListener
+        {
+            private Action _action;
+
+            public ClassesChangedListener(Action action) => _action = action;
+            public void Changed() => _action();
         }
     }
 }

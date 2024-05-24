@@ -1,24 +1,19 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using System;
-using Moq;
-using Avalonia.Collections;
-using Avalonia.Markup.Xaml.Converters;
-using Avalonia.Styling;
-using Xunit;
 using System.ComponentModel;
+using Avalonia.Markup.Xaml.Converters;
 using Avalonia.Markup.Xaml.XamlIl.Runtime;
+using Avalonia.Styling;
+using Moq;
+using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Converters
 {
-    public class AvaloniaPropertyConverterTest
+    public class AvaloniaPropertyConverterTest : XamlTestBase
     {
         public AvaloniaPropertyConverterTest()
         {
             // Ensure properties are registered.
-            var foo = Class1.FooProperty;
-            var attached = AttachedOwner.AttachedProperty;
+            _ = Class1.FooProperty;
+            _ = AttachedOwner.AttachedProperty;
         }
 
         [Fact]
@@ -114,32 +109,10 @@ namespace Avalonia.Markup.Xaml.UnitTests.Converters
             return tdMock.Object;
         }
 
-        private class Class1 : AvaloniaObject, IStyleable
+        private class Class1 : StyledElement
         {
             public static readonly StyledProperty<string> FooProperty =
                 AvaloniaProperty.Register<Class1, string>("Foo");
-
-            public IAvaloniaReadOnlyList<string> Classes
-            {
-                get { throw new NotImplementedException(); }
-            }
-
-            public string Name
-            {
-                get { throw new NotImplementedException(); }
-            }
-
-            public Type StyleKey
-            {
-                get { throw new NotImplementedException(); }
-            }
-
-            public ITemplatedControl TemplatedParent
-            {
-                get { throw new NotImplementedException(); }
-            }
-
-            IObservable<IStyleable> IStyleable.StyleDetach { get; }
         }
 
         private class AttachedOwner

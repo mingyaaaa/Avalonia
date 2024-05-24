@@ -1,6 +1,4 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
+using System;
 using System.Linq;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
@@ -119,22 +117,27 @@ namespace Avalonia.Controls.UnitTests
             Assert.Equal(new[] { child2, child1 }, panel.GetLogicalChildren());
             Assert.Equal(new[] { child2, child1 }, panel.GetVisualChildren());
         }
+        
+        [Fact]
+        public void Adding_Null_Child_Should_Throw()
+        {
+            var panel = new Panel();
+            Assert.Throws<ArgumentNullException>(() => panel.Children.Add(null!));
+        }
 
         [Fact]
-        public void Changing_Background_Brush_Color_Should_Invalidate_Visual()
+        public void Adding_Control_To_Items_Host_Panel_Should_Not_Affect_Logical_Children()
         {
-            var target = new Panel()
-            {
-                Background = new SolidColorBrush(Colors.Red),
-            };
+            var child = new Control();
+            var realParent = new ContentControl { Content = child };
+            var panel = new Panel { IsItemsHost = true };
 
-            var root = new TestRoot(target);
-            var renderer = Mock.Get(root.Renderer);
-            renderer.ResetCalls();
+            panel.Children.Add(child);
 
-            ((SolidColorBrush)target.Background).Color = Colors.Green;
-
-            renderer.Verify(x => x.AddDirty(target), Times.Once);
+            Assert.Empty(panel.LogicalChildren);
+            Assert.Same(child.Parent, realParent);
+            Assert.Same(child.GetLogicalParent(), realParent);
+            Assert.Same(child.GetVisualParent(), panel);
         }
     }
 }

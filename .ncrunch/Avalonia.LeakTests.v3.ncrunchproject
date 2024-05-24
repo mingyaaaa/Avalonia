@@ -1,8 +1,7 @@
 ﻿<ProjectConfiguration>
   <Settings>
-    <HiddenComponentWarnings>
-      <Value>MissingOrIgnoredProjectReference</Value>
-    </HiddenComponentWarnings>
-    <PreviouslyBuiltSuccessfully>True</PreviouslyBuiltSuccessfully>
+    <CustomBuildProperties>
+      <Value>TargetFramework = net462</Value>
+    </CustomBuildProperties>
   </Settings>
 </ProjectConfiguration>

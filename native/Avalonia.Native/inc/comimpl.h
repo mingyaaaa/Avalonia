@@ -8,7 +8,127 @@
 
 #include <cstring>
 
+/**
+ START_COM_CALL causes AddRef to be called at the beggining of a function.
+ When a function is exited, it causes ReleaseRef to be called.
+ This ensures that the object cannot be destroyed whilst the function is running.
+ For example: Window Show is called, which triggers an event, and user calls Close inside the event
+ causing the refcount to reach 0, and the object to be destroyed. Function then continues and this pointer
+ will now be invalid.
+ 
+ START_COM_CALL protects against this scenario.
+ */
+#define START_COM_CALL auto r = this->UnknownSelf()
+
 __IID_DEF(IUnknown, 0, 0, 0, C0, 00, 00, 00, 00, 00, 00, 46);
+
+template<class TInterface>
+class ComPtr
+{
+private:
+    TInterface* _obj;
+public:
+    ComPtr()
+    {
+        _obj = 0;
+    }
+    
+    ComPtr(TInterface* pObj)
+    {
+        _obj = 0;
+
+        if (pObj)
+        {
+            _obj = pObj;
+            _obj->AddRef();
+        }
+    }
+
+    ComPtr(TInterface* pObj, bool ownsHandle)
+    {
+        _obj = 0;
+
+        if (pObj)
+        {
+            _obj = pObj;
+            if(!ownsHandle)
+                _obj->AddRef();
+        }
+    }
+    
+    ComPtr(const ComPtr& ptr)
+    {
+        _obj = 0;
+        
+        if (ptr._obj)
+        {
+            _obj = ptr._obj;
+            _obj->AddRef();
+        }
+
+    }
+    
+    ComPtr& operator=(ComPtr other)
+    {
+        if(_obj != NULL)
+            _obj->Release();
+        _obj = other._obj;
+        if(_obj != NULL)
+            _obj->AddRef();
+        return *this;
+    }
+
+    ~ComPtr()
+    {
+        if (_obj)
+        {
+            _obj->Release();
+            _obj = 0;
+        }
+    }
+    
+    TInterface* getRaw()
+    {
+        return _obj;
+    }
+    
+    TInterface* getRetainedReference()
+    {
+        if(_obj == NULL)
+            return NULL;
+        _obj->AddRef();
+        return _obj;
+    }
+    
+    TInterface** getPPV()
+    {
+        return &_obj;
+    }
+
+    void setNoAddRef(TInterface* value)
+    {
+        if(_obj != nullptr)
+            _obj->Release();
+        _obj = value;
+    }
+    
+    operator TInterface*() const
+    {
+        return _obj;
+    }
+    TInterface& operator*() const
+    {
+        return *_obj;
+    }
+    TInterface** operator&()
+    {
+        return &_obj;
+    }
+    TInterface* operator->() const
+    {
+        return _obj;
+    }
+};
 
 class ComObject : public virtual IUnknown
 {
@@ -58,6 +178,12 @@ public:
         _refCount++;
         return S_OK;
     }
+    
+protected:
+   ComPtr<IUnknown> UnknownSelf()
+    {
+       return this;
+   }
 
 };
 
@@ -102,82 +228,6 @@ template<class TInterface, GUID const* TIID> class ComSingleObject : public ComO
     
 public:
     virtual ~ComSingleObject(){}
-};
-
-template<class TInterface>
-class ComPtr
-{
-private:
-    TInterface* _obj;
-public:
-    ComPtr()
-    {
-        _obj = 0;
-    }
-    
-    ComPtr(TInterface* pObj)
-    {
-        _obj = 0;
-
-        if (pObj)
-        {
-            _obj = pObj;
-            _obj->AddRef();
-        }
-    }
-    
-    ComPtr(const ComPtr& ptr)
-    {
-        _obj = 0;
-        
-        if (ptr._obj)
-        {
-            _obj = ptr._obj;
-            _obj->AddRef();
-        }
-
-    }
-    
-    ComPtr& operator=(ComPtr other)
-    {
-        if(_obj != NULL)
-            _obj->Release();
-        _obj = other._obj;
-        if(_obj != NULL)
-            _obj->AddRef();
-        return *this;
-    }
-
-    ~ComPtr()
-    {
-        if (_obj)
-        {
-            _obj->Release();
-            _obj = 0;
-        }
-    }
-    
-    TInterface* getRaw()
-    {
-        return _obj;
-    }
-    
-    operator TInterface*() const
-    {
-        return _obj;
-    }
-    TInterface& operator*() const
-    {
-        return *_obj;
-    }
-    TInterface** operator&()
-    {
-        return &_obj;
-    }
-    TInterface* operator->() const
-    {
-        return _obj;
-    }
 };
 
 #endif // COMIMPL_H_INCLUDED

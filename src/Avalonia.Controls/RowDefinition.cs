@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 namespace Avalonia.Controls
 {
     /// <summary>
@@ -27,9 +24,19 @@ namespace Avalonia.Controls
             AvaloniaProperty.Register<RowDefinition, GridLength>(nameof(Height), new GridLength(1, GridUnitType.Star));
 
         /// <summary>
+        /// Initializes static members of the <see cref="RowDefinition"/> class.
+        /// </summary>
+        static RowDefinition()
+        {
+            AffectsParentMeasure(MaxHeightProperty, MinHeightProperty);
+
+            HeightProperty.Changed.AddClassHandler<DefinitionBase>(OnUserSizePropertyChanged);
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="RowDefinition"/> class.
         /// </summary>
-        public RowDefinition() 
+        public RowDefinition()
         {
         }
 
@@ -38,18 +45,18 @@ namespace Avalonia.Controls
         /// </summary>
         /// <param name="value">The height of the row.</param>
         /// <param name="type">The height unit of the column.</param>
-        public RowDefinition(double value, GridUnitType type) 
+        public RowDefinition(double value, GridUnitType type)
+            : this(new GridLength(value, type))
         {
-            Height = new GridLength(value, type);
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RowDefinition"/> class.
         /// </summary>
         /// <param name="height">The height of the column.</param>
-        public RowDefinition(GridLength height) 
+        public RowDefinition(GridLength height)
         {
-            Height = height;
+            SetCurrentValue(HeightProperty, height);
         }
 
         /// <summary>
@@ -62,8 +69,8 @@ namespace Avalonia.Controls
         /// </summary>
         public double MaxHeight
         {
-            get { return GetValue(MaxHeightProperty); }
-            set { SetValue(MaxHeightProperty, value); }
+            get => GetValue(MaxHeightProperty);
+            set => SetValue(MaxHeightProperty, value);
         }
 
         /// <summary>
@@ -71,8 +78,8 @@ namespace Avalonia.Controls
         /// </summary>
         public double MinHeight
         {
-            get { return GetValue(MinHeightProperty); }
-            set { SetValue(MinHeightProperty, value); }
+            get => GetValue(MinHeightProperty);
+            set => SetValue(MinHeightProperty, value);
         }
 
         /// <summary>
@@ -80,8 +87,8 @@ namespace Avalonia.Controls
         /// </summary>
         public GridLength Height
         {
-            get { return GetValue(HeightProperty); }
-            set { SetValue(HeightProperty, value); }
+            get => GetValue(HeightProperty);
+            set => SetValue(HeightProperty, value);
         }
 
         internal override GridLength UserSizeValueCache => this.Height;

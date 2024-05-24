@@ -1,33 +1,29 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-using Avalonia.Controls.Generators;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Layout;
 
 namespace Avalonia.Controls.Primitives
 {
     public class TabStrip : SelectingItemsControl
     {
-        private static readonly FuncTemplate<IPanel> DefaultPanel =
-            new FuncTemplate<IPanel>(() => new WrapPanel { Orientation = Orientation.Horizontal });
-
-        private static IMemberSelector s_MemberSelector = new FuncMemberSelector<object, object>(SelectHeader);
+        private static readonly FuncTemplate<Panel?> DefaultPanel =
+            new(() => new WrapPanel { Orientation = Orientation.Horizontal });
 
         static TabStrip()
         {
-            MemberSelectorProperty.OverrideDefaultValue<TabStrip>(s_MemberSelector);
             SelectionModeProperty.OverrideDefaultValue<TabStrip>(SelectionMode.AlwaysSelected);
             FocusableProperty.OverrideDefaultValue(typeof(TabStrip), false);
             ItemsPanelProperty.OverrideDefaultValue<TabStrip>(DefaultPanel);
         }
 
-        protected override IItemContainerGenerator CreateItemContainerGenerator()
+        protected internal override Control CreateContainerForItemOverride(object? item, int index, object? recycleKey)
         {
-            return new ItemContainerGenerator<TabStripItem>(
-                this,
-                ContentControl.ContentProperty,
-                ContentControl.ContentTemplateProperty);
+            return new TabStripItem();
+        }
+
+        protected internal override bool NeedsContainerOverride(object? item, int index, out object? recycleKey)
+        {
+            return NeedsContainer<TabStripItem>(item, out recycleKey);
         }
 
         /// <inheritdoc/>
@@ -46,16 +42,15 @@ namespace Avalonia.Controls.Primitives
         {
             base.OnPointerPressed(e);
 
-            if (e.MouseButton == MouseButton.Left)
+            if (e.Source is Visual source)
             {
-                e.Handled = UpdateSelectionFromEventSource(e.Source);
-            }
-        }
+                var point = e.GetCurrentPoint(source);
 
-        private static object SelectHeader(object o)
-        {
-            var headered = o as IHeadered;
-            return (headered != null) ? (headered.Header ?? string.Empty) : o;
+                if (point.Properties.IsLeftButtonPressed)
+                {
+                    e.Handled = UpdateSelectionFromEventSource(e.Source);
+                }
+            }
         }
     }
 }

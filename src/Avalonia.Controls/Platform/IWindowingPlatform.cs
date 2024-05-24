@@ -1,9 +1,14 @@
+using Avalonia.Metadata;
+
 namespace Avalonia.Platform
 {
+    [Unstable, PrivateApi]
     public interface IWindowingPlatform
     {
         IWindowImpl CreateWindow();
-        IEmbeddableWindowImpl CreateEmbeddableWindow();
-        IPopupImpl CreatePopup();
+
+        IWindowImpl CreateEmbeddableWindow();
+
+        ITrayIconImpl? CreateTrayIcon();
     }
 }

@@ -1,6 +1,3 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using SharpDX;
 using SharpDX.Direct2D1;
 using SharpDX.DirectWrite;
@@ -40,7 +37,7 @@ namespace Avalonia.Direct2D1.Media
             // TODO: Work out how to get the size below rather than passing new Size().
             var brush = (wrapper == null) ?
                 _foreground :
-                _context.CreateBrush(wrapper.Brush, new Size()).PlatformBrush;
+                _context.CreateBrush(wrapper.Brush, default).PlatformBrush;
 
             _renderTarget.DrawGlyphRun(
                 new RawVector2 { X = baselineOriginX, Y = baselineOriginY },

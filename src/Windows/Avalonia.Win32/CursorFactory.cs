@@ -1,15 +1,18 @@
-// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Utilities;
 using Avalonia.Win32.Interop;
 
 namespace Avalonia.Win32
 {
-    internal class CursorFactory : IStandardCursorFactory
+    internal class CursorFactory : ICursorFactory
     {
         public static CursorFactory Instance { get; } = new CursorFactory();
 
@@ -32,8 +35,7 @@ namespace Avalonia.Win32
                 IntPtr cursor = UnmanagedMethods.LoadCursor(mh, new IntPtr(id));
                 if (cursor != IntPtr.Zero)
                 {
-                    PlatformHandle phCursor = new PlatformHandle(cursor, PlatformConstants.CursorHandleType);
-                    Cache.Add(cursorType, phCursor);
+                    Cache.Add(cursorType, new CursorImpl(cursor));
                 }
             }
         }
@@ -56,7 +58,7 @@ namespace Avalonia.Win32
             {StandardCursorType.Wait, 32514},
             //Same as SizeNorthSouth
             {StandardCursorType.TopSide, 32645},
-            {StandardCursorType.BottomSize, 32645},
+            {StandardCursorType.BottomSide, 32645},
             //Same as SizeWestEast
             {StandardCursorType.LeftSide, 32644},
             {StandardCursorType.RightSide, 32644},
@@ -73,22 +75,52 @@ namespace Avalonia.Win32
             {StandardCursorType.DragLink, 32516},
         };
 
-        private static readonly Dictionary<StandardCursorType, IPlatformHandle> Cache =
-            new Dictionary<StandardCursorType, IPlatformHandle>();
+        private static readonly Dictionary<StandardCursorType, CursorImpl> Cache =
+            new Dictionary<StandardCursorType, CursorImpl>();
 
-        public IPlatformHandle GetCursor(StandardCursorType cursorType)
+        public ICursorImpl GetCursor(StandardCursorType cursorType)
         {
-            IPlatformHandle rv;
-            if (!Cache.TryGetValue(cursorType, out rv))
+            if (!Cache.TryGetValue(cursorType, out var rv))
             {
-                Cache[cursorType] =
-                    rv =
-                        new PlatformHandle(
-                            UnmanagedMethods.LoadCursor(IntPtr.Zero, new IntPtr(CursorTypeMapping[cursorType])),
-                            PlatformConstants.CursorHandleType);
+                rv = new CursorImpl(
+                    UnmanagedMethods.LoadCursor(IntPtr.Zero, new IntPtr(CursorTypeMapping[cursorType])));
+                Cache.Add(cursorType, rv);
             }
 
             return rv;
+        }
+
+        public ICursorImpl CreateCursor(IBitmapImpl cursor, PixelPoint hotSpot)
+        {
+            return new CursorImpl(new Win32Icon(cursor, hotSpot));
+        }
+    }
+
+    internal class CursorImpl : ICursorImpl, IPlatformHandle
+    {
+        private Win32Icon? _icon;
+
+        public CursorImpl(Win32Icon icon) : this(icon.Handle)
+        {
+            _icon = icon;
+        }
+        
+        public CursorImpl(IntPtr handle)
+        {
+            Handle = handle;
+        }
+
+        public IntPtr Handle { get; private set; }
+        public string HandleDescriptor => PlatformConstants.CursorHandleType;
+
+        public void Dispose()
+        {
+            if (_icon != null)
+            {
+                _icon.Dispose();
+                _icon = null;
+                Handle = IntPtr.Zero;
+            }
         }
     }
 }
